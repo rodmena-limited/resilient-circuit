@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "highway_circutbreaker"
-version = "0.1.0"
+version = "0.2.0"
 description = "A circuit breaker and retry library for handling failures in Python applications"
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,8 +38,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/highway_circutbreaker"
-Repository = "https://github.com/yourusername/highway_circutbreaker"
+Homepage = "https://github.com/rodmena-limited/highway_circutbreaker"
+Repository = "https://github.com/rodmena-limited/highway_circutbreaker"
 
 [tool.setuptools.packages.find]
 include = ["highway_circutbreaker*"]
