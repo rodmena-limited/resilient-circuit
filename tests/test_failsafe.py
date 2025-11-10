@@ -3,87 +3,87 @@ from unittest.mock import Mock
 
 import pytest
 
-from highway_circutbreaker.circuit_breaker import CircuitBreakerPolicy, State
-from highway_circutbreaker.exceptions import CircuitBreakerOpenError, RetriesExceeded
-from highway_circutbreaker.failsafe import Failsafe
-from highway_circutbreaker.retry import RetryPolicy
+from highway_circutbreaker.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
+from highway_circutbreaker.exceptions import ProtectedCallError, RetryLimitReached
+from highway_circutbreaker.failsafe import SafetyNet
+from highway_circutbreaker.retry import RetryWithBackoffPolicy
 
 
-class TestFailsafe:
+class TestSafetyNet:
     @pytest.fixture
-    def breaker(self):
-        yield CircuitBreakerPolicy(cooldown=timedelta(milliseconds=10))
+    def protector(self):
+        yield CircuitProtectorPolicy(cooldown=timedelta(milliseconds=10))
 
     @pytest.fixture
-    def retry(self):
-        yield RetryPolicy(max_retries=3)
+    def backoff_retries(self):
+        yield RetryWithBackoffPolicy(max_retries=3)
 
-    def test_should_construct_failsafe(self, breaker, retry):
+    def test_should_construct_safety_net(self, protector, backoff_retries):
         # given
-        policies = (breaker, retry)
+        policies = (protector, backoff_retries)
 
         # when
-        failsafe = Failsafe(policies=policies)
+        safety_net = SafetyNet(policies=policies)
 
         # then
-        assert failsafe.policies is policies
+        assert safety_net.policies is policies
 
-    def test_should_require_unique_policies(self, retry):
+    def test_should_require_unique_policies(self, backoff_retries):
         # given
-        policies = (retry, retry)
+        policies = (backoff_retries, backoff_retries)
 
         # when / then
         with pytest.raises(ValueError, match="All policies must be unique."):
-            Failsafe(policies=policies)
+            SafetyNet(policies=policies)
 
     def test_should_return_original_method_when_no_policies_supplied(self):
         # given
         method = Mock()
-        failsafe = Failsafe(policies=[])
+        safety_net = SafetyNet(policies=[])
 
         # when
-        failsafe_method = failsafe(method)
+        safety_net_method = safety_net(method)
 
         # then
-        assert failsafe_method is method
+        assert safety_net_method is method
 
-    def test_should_wrap_original_method(self, breaker, retry):
+    def test_should_wrap_original_method(self, protector, backoff_retries):
         # given
         method = Mock()
-        failsafe = Failsafe(policies=(retry, breaker))
+        safety_net = SafetyNet(policies=(backoff_retries, protector))
 
         # when
-        result = failsafe(method)()
+        result = safety_net(method)()
 
         # then
         assert method.call_count == 1
         assert result is method.return_value
 
-    def test_should_evaluate_retry_first(self, retry, breaker):
+    def test_should_evaluate_retry_first(self, backoff_retries, protector):
         # given
         method = Mock(side_effect=[RuntimeError, RuntimeError, "success"])
-        failsafe = Failsafe(policies=(breaker, retry))
-        failsafe_method = failsafe(method)
+        safety_net = SafetyNet(policies=(protector, backoff_retries))
+        safety_net_method = safety_net(method)
 
         # when
-        result = failsafe_method()
+        result = safety_net_method()
 
         # then
         assert result == "success"
         assert method.call_count == 3
-        assert breaker.state is State.CLOSED
+        assert protector.status is CircuitStatus.CLOSED
 
-    def test_should_evaluate_circuit_breaker_first(self, retry, breaker):
+    def test_should_evaluate_circuit_protector_first(self, backoff_retries, protector):
         # given
         method = Mock(side_effect=RuntimeError)
-        failsafe = Failsafe(policies=(retry, breaker))
-        failsafe_method = failsafe(method)
+        safety_net = SafetyNet(policies=(backoff_retries, protector))
+        safety_net_method = safety_net(method)
 
         # when
-        with pytest.raises(RetriesExceeded) as e:
-            failsafe_method()
+        with pytest.raises(RetryLimitReached) as e:
+            safety_net_method()
 
         # then
-        assert isinstance(e.value.__cause__, CircuitBreakerOpenError)
+        assert isinstance(e.value.__cause__, ProtectedCallError)
         assert method.call_count == 1
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN

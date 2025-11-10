@@ -12,21 +12,21 @@ This document describes common usage patterns and real-world scenarios for Highw
 
 ## Basic Service Calls
 
-### Simple Circuit Breaker
+### Simple Circuit Protector
 
 For services that may occasionally fail:
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
-service_breaker = CircuitBreakerPolicy(
+service_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
-    failure_threshold=Fraction(2, 5)
+    failure_limit=Fraction(2, 5)
 )
 
-@service_breaker
+@service_protector
 def call_external_service(data):
     # Your actual service call
     import requests
@@ -41,11 +41,11 @@ For services that might have temporary issues:
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy, Backoff
+from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
 
-service_retry = RetryPolicy(
+service_retry = RetryWithBackoffPolicy(
     max_retries=3,
-    backoff=Backoff(
+    backoff=ExponentialDelay(
         min_delay=timedelta(seconds=1),
         max_delay=timedelta(seconds=10),
         factor=2
@@ -62,21 +62,21 @@ def call_retryable_service(data):
 
 ## Database Connections
 
-### Database Operation with Circuit Breaker
+### Database Operation with Circuit Protector
 
 ```python
 import sqlite3
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
-db_breaker = CircuitBreakerPolicy(
+db_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
-    failure_threshold=Fraction(1, 5),
-    handle=lambda e: isinstance(e, sqlite3.OperationalError)
+    failure_limit=Fraction(1, 5),
+    should_handle=lambda e: isinstance(e, sqlite3.OperationalError)
 )
 
-@db_breaker
+@db_protector
 def get_user_data(user_id):
     conn = sqlite3.connect('mydb.db')
     cursor = conn.cursor()
@@ -90,11 +90,11 @@ def get_user_data(user_id):
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy
+from highway_circutbreaker import RetryWithBackoffPolicy
 
-db_retry = RetryPolicy(
+db_retry = RetryWithBackoffPolicy(
     max_retries=2,
-    handle=lambda e: isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError))
+    should_handle=lambda e: isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError))
 )
 
 @db_retry
@@ -108,36 +108,36 @@ def update_user_data(user_id, data):
 
 ## API Integrations
 
-### External API with Both Circuit Breaker and Retry
+### External API with Both Circuit Protector and Retry
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import Failsafe, RetryPolicy, CircuitBreakerPolicy
+from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
 # Create resilient API client
-api_failsafe = Failsafe(
+api_safetynet = SafetyNet(
     policies=(
         # Apply retry first
-        RetryPolicy(
+        RetryWithBackoffPolicy(
             max_retries=2,
-            backoff=Backoff(
+            backoff=ExponentialDelay(
                 min_delay=timedelta(seconds=1),
                 max_delay=timedelta(seconds=5),
                 factor=2
             ),
-            handle=lambda e: isinstance(e, requests.ConnectionError)
+            should_handle=lambda e: isinstance(e, requests.ConnectionError)
         ),
-        # Then circuit breaker
-        CircuitBreakerPolicy(
+        # Then circuit protector
+        CircuitProtectorPolicy(
             cooldown=timedelta(minutes=1),
-            failure_threshold=Fraction(3, 10),
-            handle=lambda e: isinstance(e, (requests.ConnectionError, requests.Timeout))
+            failure_limit=Fraction(3, 10),
+            should_handle=lambda e: isinstance(e, (requests.ConnectionError, requests.Timeout))
         )
     )
 )
 
-@api_failsafe
+@api_safetynet
 def fetch_external_data(query):
     import requests
     response = requests.get(
@@ -153,7 +153,7 @@ def fetch_external_data(query):
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
 def is_api_error_relevant(exc):
     """Check if the error is one we should handle"""
@@ -161,13 +161,13 @@ def is_api_error_relevant(exc):
         return exc.response.status_code in [500, 502, 503, 504]
     return isinstance(exc, (requests.ConnectionError, requests.Timeout))
 
-oauth_breaker = CircuitBreakerPolicy(
+oauth_protector = CircuitProtectorPolicy(
     cooldown=timedelta(minutes=5),
-    failure_threshold=Fraction(2, 5),
-    handle=is_api_error_relevant
+    failure_limit=Fraction(2, 5),
+    should_handle=is_api_error_relevant
 )
 
-@oauth_breaker
+@oauth_protector
 def call_oauth_protected_api():
     import requests
     # Refresh token logic here...
@@ -183,12 +183,12 @@ def call_oauth_protected_api():
 
 ## Message Queue Processing
 
-### Consumer with Circuit Breaker
+### Consumer with Circuit Protector
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
 def is_transient_error(exc):
     """Only handle transient errors, not permanent failures"""
@@ -197,13 +197,13 @@ def is_transient_error(exc):
         ("transient" in str(exc).lower())
     )
 
-queue_consumer_breaker = CircuitBreakerPolicy(
+queue_consumer_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
-    failure_threshold=Fraction(1, 3),
-    handle=is_transient_error
+    failure_limit=Fraction(1, 3),
+    should_handle=is_transient_error
 )
 
-@queue_consumer_breaker
+@queue_consumer_protector
 def process_queue_message(message):
     # Process the message
     try:
@@ -213,9 +213,9 @@ def process_queue_message(message):
         # Acknowledge message
         return result
     except Exception as e:
-        # Log the error but only handle transient errors in circuit breaker
+        # Log the error but only handle transient errors in circuit protector
         print(f"Error processing message: {e}")
-        raise  # Re-raise to let circuit breaker handle it if needed
+        raise  # Re-raise to let circuit protector handle it if needed
 ```
 
 ## Batch Processing
@@ -261,30 +261,30 @@ def process_single_item(item):
 ```python
 from datetime import datetime, timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy, CircuitBreakerState
+from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
 
-class CircuitBreakerMonitor:
+class CircuitProtectorMonitor:
     def __init__(self):
         self.state_transitions = []
         self.last_transition = datetime.now()
     
-    def log_state_change(self, policy, old_state, new_state):
+    def log_status_change(self, policy, old_status, new_status):
         transition_time = datetime.now()
         duration = transition_time - self.last_transition
         
-        print(f"Circuit breaker changed state: {old_state.name} -> {new_state.name}")
-        print(f"Duration in {old_state.name} state: {duration}")
+        print(f"Circuit protector changed status: {old_status.name} -> {new_status.name}")
+        print(f"Duration in {old_status.name} status: {duration}")
         
-        self.state_transitions.append({
+        self.status_transitions.append({
             'timestamp': transition_time,
-            'old_state': old_state,
-            'new_state': new_state,
+            'old_status': old_status,
+            'new_status': new_status,
             'duration': duration
         })
         
-        # Alert on critical state changes
-        if new_state == CircuitBreakerState.OPEN:
-            self.send_alert(f"Circuit breaker opened for service at {transition_time}")
+        # Alert on critical status changes
+        if new_status == CircuitState.OPEN:
+            self.send_alert(f"Circuit protector opened for service at {transition_time}")
         
         self.last_transition = transition_time
     
@@ -293,16 +293,16 @@ class CircuitBreakerMonitor:
         print(f"ALERT: {message}")
 
 # Create monitor instance
-monitor = CircuitBreakerMonitor()
+monitor = CircuitProtectorMonitor()
 
-# Create circuit breaker with monitoring
-monitored_breaker = CircuitBreakerPolicy(
+# Create circuit protector with monitoring
+monitored_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
-    failure_threshold=Fraction(3, 10),
-    on_state_change=monitor.log_state_change
+    failure_limit=Fraction(3, 10),
+    on_status_change=monitor.log_status_change
 )
 
-@monitored_breaker
+@monitored_protector
 def monitored_service_call():
     # Service call with full monitoring
     import random
@@ -317,7 +317,7 @@ def monitored_service_call():
 import logging
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -331,27 +331,27 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-def create_logged_circuit_breaker(name):
-    """Create a circuit breaker with comprehensive logging"""
+def create_logged_circuit_protector(name):
+    """Create a circuit protector with comprehensive logging"""
     
-    def log_state_change(policy, old_state, new_state):
+    def log_status_change(policy, old_status, new_status):
         logger.info(
-            f"[{name}] Circuit breaker state changed: {old_state.name} -> {new_state.name}"
+            f"[{name}] Circuit protector status changed: {old_status.name} -> {new_status.name}"
         )
-        # Log history
-        history = list(policy.history)
-        logger.info(f"[{name}] Recent execution history: {history}")
+        # Log execution_log
+        execution_log = list(policy.execution_log)
+        logger.info(f"[{name}] Recent execution log: {execution_log}")
     
-    return CircuitBreakerPolicy(
+    return CircuitProtectorPolicy(
         cooldown=timedelta(seconds=30),
-        failure_threshold=Fraction(2, 5),
-        on_state_change=log_state_change
+        failure_limit=Fraction(2, 5),
+        on_status_change=log_status_change
     )
 
-# Use the logged circuit breaker
-logged_breaker = create_logged_circuit_breaker("ExternalPaymentAPI")
+# Use the logged circuit protector
+logged_protector = create_logged_circuit_protector("ExternalPaymentAPI")
 
-@logged_breaker
+@logged_protector
 def process_payment(amount, card_details):
     # Payment processing with comprehensive logging
     try:
@@ -374,7 +374,7 @@ def execute_payment(amount, card_details):
 
 ## Pattern Summary
 
-### Choose Circuit Breaker When:
+### Choose Circuit Protector When:
 - You want to prevent cascading failures
 - You have services that may go down temporarily
 - You want to provide immediate failure responses during outages

@@ -4,85 +4,85 @@ This document provides a comprehensive reference for the Highway Circuit Breaker
 
 ## Classes
 
-### CircuitBreakerPolicy
+### CircuitProtectorPolicy
 
 Implements the circuit breaker pattern to prevent cascading failures in distributed systems.
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
-CircuitBreakerPolicy(
+CircuitProtectorPolicy(
     cooldown: timedelta = timedelta(0),
-    failure_threshold: Fraction = Fraction(1, 1),
-    success_threshold: Fraction = Fraction(1, 1),
-    handle: Callable[[Exception], bool] = lambda e: True,
-    on_state_change: Optional[Callable[["CircuitBreakerPolicy", State, State], None]] = None
+    failure_limit: Fraction = Fraction(1, 1),
+    success_limit: Fraction = Fraction(1, 1),
+    should_handle: Callable[[Exception], bool] = lambda e: True,
+    on_status_change: Optional[Callable[["CircuitProtectorPolicy", CircuitStatus, CircuitStatus], None]] = None
 )
 ```
 
 #### Parameters
 
-- **cooldown** (`timedelta`): Duration to wait before transitioning from `OPEN` to `HALF_OPEN` state
-- **failure_threshold** (`Fraction`): Fraction of failures over total executions that will trip the circuit breaker from `CLOSED` to `OPEN`
-- **success_threshold** (`Fraction`): Fraction of successes that will close the circuit breaker from `HALF_OPEN` to `CLOSED`. If not set, `failure_threshold` is used instead
-- **handle** (`Callable[[Exception], bool]`): Predicate to determine which exceptions count as failures. By default, all exceptions are handled
-- **on_state_change** (`Callable[[CircuitBreakerPolicy, State, State], None]`): Function called when the circuit breaker changes state
+- **cooldown** (`timedelta`): Duration to wait before transitioning from `OPEN` to `HALF_OPEN` status
+- **failure_limit** (`Fraction`): Fraction of failures over total executions that will trip the circuit protector from `CLOSED` to `OPEN`
+- **success_limit** (`Fraction`): Fraction of successes that will close the circuit protector from `HALF_OPEN` to `CLOSED`. If not set, `failure_limit` is used instead
+- **should_handle** (`Callable[[Exception], bool]`): Predicate to determine which exceptions count as failures. By default, all exceptions are handled
+- **on_status_change** (`Callable[[CircuitProtectorPolicy, CircuitStatus, CircuitStatus], None]`): Function called when the circuit protector changes status
 
 #### Properties
 
-- **state** (`CircuitBreakerState`): Current state of the circuit breaker (`CLOSED`, `OPEN`, or `HALF_OPEN`)
-- **history** (`BoolCircularBuffer`): History of recent successes and failures
+- **status** (`CircuitState`): Current status of the circuit protector (`CLOSED`, `OPEN`, or `HALF_OPEN`)
+- **execution_log** (`BinaryCircularBuffer`): Log of recent successes and failures
 
 #### Methods
 
-- **on_state_change**(current: `CircuitBreakerState`, new: `CircuitBreakerState`) → None: Called when the circuit breaker changes state
+- **on_status_change**(current: `CircuitState`, new: `CircuitState`) → None: Called when the circuit protector changes status
 
-### RetryPolicy
+### RetryWithBackoffPolicy
 
 Implements the retry pattern to automatically retry failed operations.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy, Backoff
+from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
 
-RetryPolicy(
-    backoff: Optional[Backoff] = None,
+RetryWithBackoffPolicy(
+    backoff: Optional[ExponentialDelay] = None,
     max_retries: int = 3,
-    handle: Callable[[Exception], bool] = lambda e: True
+    should_handle: Callable[[Exception], bool] = lambda e: True
 )
 ```
 
 #### Parameters
 
-- **backoff** (`Backoff`): Backoff strategy to use between retries. If None, retries happen immediately
+- **backoff** (`ExponentialDelay`): Backoff strategy to use between retries. If None, retries happen immediately
 - **max_retries** (`int`): Maximum number of retry attempts (default: 3)
-- **handle** (`Callable[[Exception], bool]`): Predicate to determine which exceptions should be retried. By default, all exceptions are retried
+- **should_handle** (`Callable[[Exception], bool]`): Predicate to determine which exceptions should be retried. By default, all exceptions are retried
 
-### Failsafe
+### SafetyNet
 
 Combines multiple policies to provide comprehensive error handling.
 
 ```python
-from highway_circutbreaker import Failsafe
+from highway_circutbreaker import SafetyNet
 
-Failsafe(policies: tuple)
+SafetyNet(policies: tuple)
 ```
 
 #### Parameters
 
 - **policies** (`tuple`): Tuple of policy instances to apply
 
-### Backoff
+### ExponentialDelay
 
 Base class for implementing backoff strategies between retries.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import Backoff
+from highway_circutbreaker import ExponentialDelay
 
-Backoff(
+ExponentialDelay(
     min_delay: timedelta,
     max_delay: timedelta,
     factor: int = 2,
@@ -105,15 +105,15 @@ The backoff delay is calculated as: `min_delay * pow(factor, attempt-1)`
 
 - **for_attempt**(attempt: `int`) → `float`: Calculate delay in seconds for a given attempt number
 
-### Delay
+### FixedDelay
 
-A subclass of `Backoff` that implements constant delay between retries.
+A subclass of `ExponentialDelay` that implements constant delay between retries.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import Delay
+from highway_circutbreaker import FixedDelay
 
-Delay(delay: timedelta)
+FixedDelay(delay: timedelta)
 ```
 
 #### Parameters
@@ -122,44 +122,44 @@ Delay(delay: timedelta)
 
 ## Enums
 
-### CircuitBreakerState
+### CircuitState
 
-Represents the state of a circuit breaker:
+Represents the status of a circuit protector:
 
-- `CircuitBreakerState.CLOSED`: Normal operation, requests are allowed
-- `CircuitBreakerState.OPEN`: Requests are blocked, circuit is broken
-- `CircuitBreakerState.HALF_OPEN`: Testing state, limited requests allowed to determine if service has recovered
+- `CircuitState.CLOSED`: Normal operation, requests are allowed
+- `CircuitState.OPEN`: Requests are blocked, circuit is broken
+- `CircuitState.HALF_OPEN`: Testing status, limited requests allowed to determine if service has recovered
 
 ## Exceptions
 
-### CircuitBreakerOpenError
+### ProtectedCallError
 
-Raised when the circuit breaker is in the `OPEN` state and a request is attempted.
+Raised when the circuit protector is in the `OPEN` status and a request is attempted.
 
-### RetriesExceeded
+### RetryLimitReached
 
-Raised when the maximum number of retries is exceeded in a `RetryPolicy`. Preserves the original exception context.
+Raised when the maximum number of retries is exceeded in a `RetryWithBackoffPolicy`. Preserves the original exception context.
 
 ## Examples
 
-### Using Circuit Breaker with Custom Parameters
+### Using Circuit Protector with Custom Parameters
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy, CircuitBreakerState
+from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
 
-def on_state_change(policy, old_state, new_state):
-    print(f"State changed from {old_state.name} to {new_state.name}")
+def on_status_change(policy, old_status, new_status):
+    print(f"Status changed from {old_status.name} to {new_status.name}")
 
-breaker = CircuitBreakerPolicy(
+protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
-    failure_threshold=Fraction(3, 10),
-    success_threshold=Fraction(5, 5),
-    on_state_change=on_state_change
+    failure_limit=Fraction(3, 10),
+    success_limit=Fraction(5, 5),
+    on_status_change=on_status_change
 )
 
-@breaker
+@protector
 def service_call():
     # Your service call
     pass
@@ -169,16 +169,16 @@ def service_call():
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy, Backoff
+from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
 
-exponential_backoff = Backoff(
+exponential_backoff = ExponentialDelay(
     min_delay=timedelta(milliseconds=100),
     max_delay=timedelta(seconds=5),
     factor=2,
     jitter=0.1
 )
 
-retry_policy = RetryPolicy(
+retry_policy = RetryWithBackoffPolicy(
     max_retries=5,
     backoff=exponential_backoff
 )
@@ -189,21 +189,21 @@ def unreliable_operation():
     pass
 ```
 
-### Failsafe with Multiple Policies
+### SafetyNet with Multiple Policies
 
 ```python
-from highway_circutbreaker import Failsafe, RetryPolicy, CircuitBreakerPolicy
+from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
-failsafe = Failsafe(
+safety_net = SafetyNet(
     policies=(
-        RetryPolicy(max_retries=2),
-        CircuitBreakerPolicy(failure_threshold=Fraction(3, 10))
+        RetryWithBackoffPolicy(max_retries=2),
+        CircuitProtectorPolicy(failure_limit=Fraction(3, 10))
     )
 )
 
-@failsafe
+@safety_net
 def resilient_operation():
-    # This will first apply circuit breaker logic,
-    # then retry logic if the breaker allows the call
+    # This will first apply circuit protector logic,
+    # then retry logic if the protector allows the call
     pass
 ```

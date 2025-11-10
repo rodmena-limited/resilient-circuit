@@ -5,7 +5,7 @@ from typing import Optional
 
 
 @dataclass(frozen=True)
-class Backoff:
+class ExponentialDelay:
     min_delay: timedelta
     max_delay: timedelta
     factor: int = 2
@@ -30,8 +30,8 @@ class Backoff:
         return min(delay, self.max_delay.total_seconds())
 
 
-class Delay(Backoff):
-    """Special case of Backoff when delay between calls is constant."""
+class FixedDelay(ExponentialDelay):
+    """Special case of ExponentialDelay when delay between calls is constant."""
 
     def __init__(self, delay: timedelta) -> None:
         super().__init__(min_delay=delay, max_delay=delay, factor=1)

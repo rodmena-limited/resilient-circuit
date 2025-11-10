@@ -4,14 +4,14 @@ from datetime import timedelta
 
 import pytest
 
-from highway_circutbreaker.backoff import Backoff, Delay
+from highway_circutbreaker.backoff import ExponentialDelay, FixedDelay
 
 
-class TestBackoff:
+class TestExponentialDelay:
     # noinspection PyDataclass
     def test_should_be_immutable(self):
         # given
-        backoff = Backoff(min_delay=timedelta(0), max_delay=timedelta(10))
+        backoff = ExponentialDelay(min_delay=timedelta(0), max_delay=timedelta(10))
 
         # when / then
         with pytest.raises(FrozenInstanceError):
@@ -19,7 +19,7 @@ class TestBackoff:
 
     def test_should_construct_backoff_with_defaults(self):
         # when
-        backoff = Backoff(
+        backoff = ExponentialDelay(
             min_delay=timedelta(seconds=0), max_delay=timedelta(seconds=10)
         )
 
@@ -31,7 +31,7 @@ class TestBackoff:
 
     def test_should_require_positive_attempt(self):
         # given
-        backoff = Backoff(min_delay=timedelta(0), max_delay=timedelta(10))
+        backoff = ExponentialDelay(min_delay=timedelta(0), max_delay=timedelta(10))
 
         # when / then
         with pytest.raises(ValueError, match="`attempt` must be positive."):
@@ -53,7 +53,7 @@ class TestBackoff:
     def test_should_require_jitter_to_be_in_closed_0_1_range(self, expectation, jitter):
         # when / then
         with expectation:
-            Backoff(min_delay=timedelta(0), max_delay=timedelta(1), jitter=jitter)
+            ExponentialDelay(min_delay=timedelta(0), max_delay=timedelta(1), jitter=jitter)
 
     @pytest.mark.parametrize(
         ["attempt", "expected"],
@@ -67,7 +67,7 @@ class TestBackoff:
     )
     def test_should_calculate_delay_for_attempt(self, attempt, expected):
         # given
-        backoff = Backoff(
+        backoff = ExponentialDelay(
             min_delay=timedelta(milliseconds=50),
             max_delay=timedelta(seconds=100),
         )
@@ -82,7 +82,7 @@ class TestBackoff:
     def test_should_not_exceed_max_delay(self, attempt):
         # given
         max_delay = 0.1
-        backoff = Backoff(
+        backoff = ExponentialDelay(
             min_delay=timedelta(milliseconds=60),
             max_delay=timedelta(seconds=max_delay),
         )
@@ -97,7 +97,7 @@ class TestBackoff:
     @pytest.mark.parametrize("_", range(10))
     def test_should_apply_jitter_to_the_delay(self, _):
         # given
-        backoff = Backoff(
+        backoff = ExponentialDelay(
             min_delay=timedelta(milliseconds=50),
             max_delay=timedelta(seconds=100),
             jitter=0.1,
@@ -110,10 +110,10 @@ class TestBackoff:
         assert 0.72 < delay < 0.88
 
 
-class TestDelay:
+class TestFixedDelay:
     def test_should_require_positive_attempt(self):
         # given
-        delay = Delay(timedelta(seconds=1))
+        delay = FixedDelay(timedelta(seconds=1))
 
         # when / then
         with pytest.raises(ValueError, match="`attempt` must be positive."):
@@ -122,7 +122,7 @@ class TestDelay:
     @pytest.mark.parametrize("attempt", range(1, 5))
     def test_should_provide_equal_delays(self, attempt):
         # given
-        delay = Delay(timedelta(seconds=1))
+        delay = FixedDelay(timedelta(seconds=1))
 
         # when
         # noinspection PyTypeChecker

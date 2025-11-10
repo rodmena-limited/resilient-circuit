@@ -4,7 +4,7 @@ from typing import Generic, List, TypeVar
 T = TypeVar("T")
 
 
-class CircularBuffer(Generic[T]):
+class GenericCircularBuffer(Generic[T]):
     """Buffer that keeps last N items."""
 
     def __init__(self, size: int) -> None:
@@ -32,24 +32,24 @@ class CircularBuffer(Generic[T]):
         return len(self) >= self.size
 
 
-class BoolCircularBuffer(CircularBuffer[bool]):
-    """CircularBuffer of boolean items.
+class BinaryCircularBuffer(GenericCircularBuffer[bool]):
+    """GenericCircularBuffer of boolean items.
 
     Introduces properties to get success/failures and their respective ratios.
     """
 
     @property
-    def successes(self) -> int:
+    def success_count(self) -> int:
         return self._items.count(True)
 
     @property
-    def failures(self) -> int:
+    def failure_count(self) -> int:
         return self._items.count(False)
 
     @property
-    def success_ratio(self) -> Fraction:
-        return Fraction(self.successes, len(self))
+    def success_rate(self) -> Fraction:
+        return Fraction(self.success_count, len(self))
 
     @property
-    def failure_ratio(self) -> Fraction:
-        return Fraction(self.failures, len(self))
+    def failure_rate(self) -> Fraction:
+        return Fraction(self.failure_count, len(self))

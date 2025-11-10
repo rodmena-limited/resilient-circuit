@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "highway_circutbreaker"
-version = "0.2.0"
+version = "0.3.0"
 description = "A circuit breaker and retry library for handling failures in Python applications"
 readme = "README.md"
 license = {text = "MIT"}

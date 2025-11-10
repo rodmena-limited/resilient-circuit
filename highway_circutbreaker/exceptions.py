@@ -1,10 +1,10 @@
-class FailsafeException(Exception):
+class ProtectionException(Exception):
     pass
 
 
-class RetriesExceeded(FailsafeException):
+class RetryLimitReached(ProtectionException):
     pass
 
 
-class CircuitBreakerOpenError(FailsafeException):
+class ProtectedCallError(ProtectionException):
     pass

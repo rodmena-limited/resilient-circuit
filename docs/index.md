@@ -6,15 +6,15 @@ Welcome to the Highway Circuit Breaker documentation. This library is part of th
 1. [Introduction](#introduction)
 2. [Installation](#installation)
 3. [Core Concepts](#core-concepts)
-4. [Circuit Breaker Pattern](#circuit-breaker-pattern)
+4. [Circuit Protector Pattern](#circuit-protector-pattern)
 5. [Retry Pattern](#retry-pattern)
-6. [Failsafe Pattern](#failsafe-pattern)
+6. [SafetyNet Pattern](#safetynet-pattern)
 7. [Advanced Usage](#advanced-usage)
 8. [Integration with Highway Workflow Engine](#integration-with-highway-workflow-engine)
 
 ## Introduction
 
-Highway Circuit Breaker is a Python library that implements resilience patterns to help your applications gracefully handle failures in distributed systems. It provides implementations of the Circuit Breaker and Retry patterns, which are essential for building fault-tolerant services.
+Highway Circuit Breaker is a Python library that implements resilience patterns to help your applications gracefully handle failures in distributed systems. It provides implementations of the Circuit Protector and Retry patterns, which are essential for building fault-tolerant services.
 
 ### Why Use Highway Circuit Breaker?
 
@@ -32,9 +32,9 @@ pip install highway_circutbreaker
 
 ## Core Concepts
 
-### The Circuit Breaker State Machine
+### The Circuit Protector Status Machine
 
-The Circuit Breaker operates in three states:
+The Circuit Protector operates in three statuses:
 - **CLOSED**: Normal operation, requests are allowed
 - **OPEN**: All requests are blocked immediately
 - **HALF_OPEN**: Test requests are allowed to determine if the service has recovered
@@ -43,22 +43,22 @@ The Circuit Breaker operates in three states:
 
 Retries are useful for handling temporary failures by attempting an operation multiple times before giving up.
 
-## Circuit Breaker Pattern
+## Circuit Protector Pattern
 
 ### Basic Usage
 
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitBreakerPolicy
+from highway_circutbreaker import CircuitProtectorPolicy
 
-# Create a circuit breaker
-breaker = CircuitBreakerPolicy(
+# Create a circuit protector
+protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
-    failure_threshold=Fraction(2, 5)
+    failure_limit=Fraction(2, 5)
 )
 
-@breaker
+@protector
 def external_service_call():
     # Potentially unreliable service call
     pass
@@ -69,26 +69,26 @@ def external_service_call():
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | cooldown | timedelta | Duration before transitioning from OPEN to HALF_OPEN |
-| failure_threshold | Fraction | Fraction of failures to trip the circuit |
-| success_threshold | Fraction | Fraction of successes to close the circuit in HALF_OPEN state |
-| handle | Callable | Predicate to determine which exceptions count as failures |
-| on_state_change | Callable | Callback when the circuit breaker changes state |
+| failure_limit | Fraction | Fraction of failures to trip the circuit |
+| success_limit | Fraction | Fraction of successes to close the circuit in HALF_OPEN status |
+| should_handle | Callable | Predicate to determine which exceptions count as failures |
+| on_status_change | Callable | Callback when the circuit protector changes status |
 
-### State Transitions
+### Status Transitions
 
-- **CLOSED → OPEN**: When failure rate exceeds `failure_threshold`
+- **CLOSED → OPEN**: When failure rate exceeds `failure_limit`
 - **OPEN → HALF_OPEN**: After cooldown period expires
-- **HALF_OPEN → CLOSED**: When success rate meets `success_threshold`
-- **HALF_OPEN → OPEN**: When failure rate meets threshold
+- **HALF_OPEN → CLOSED**: When success rate meets `success_limit`
+- **HALF_OPEN → OPEN**: When failure rate meets limit
 
 ## Retry Pattern
 
 ### Basic Usage
 
 ```python
-from highway_circutbreaker import RetryPolicy
+from highway_circutbreaker import RetryWithBackoffPolicy
 
-retry_policy = RetryPolicy(max_retries=3)
+retry_policy = RetryWithBackoffPolicy(max_retries=3)
 
 @retry_policy
 def flaky_operation():
@@ -100,16 +100,16 @@ def flaky_operation():
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy, Backoff
+from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
 
-backoff = Backoff(
+backoff = ExponentialDelay(
     min_delay=timedelta(seconds=1),
     max_delay=timedelta(seconds=10),
     factor=2,
     jitter=0.1
 )
 
-retry_with_backoff = RetryPolicy(
+retry_with_backoff = RetryWithBackoffPolicy(
     max_retries=3,
     backoff=backoff
 )
@@ -120,23 +120,23 @@ def operation_with_backoff():
     pass
 ```
 
-## Failsafe Pattern
+## SafetyNet Pattern
 
-The Failsafe pattern combines multiple policies:
+The SafetyNet pattern combines multiple policies:
 
 ```python
-from highway_circutbreaker import Failsafe, RetryPolicy, CircuitBreakerPolicy
+from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
-failsafe = Failsafe(
+safety_net = SafetyNet(
     policies=(
-        RetryPolicy(max_retries=2),
-        CircuitBreakerPolicy(failure_threshold=Fraction(2, 5))
+        RetryWithBackoffPolicy(max_retries=2),
+        CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
     )
 )
 
-@failsafe
+@safety_net
 def resilient_operation():
-    # First retries, then circuit breaker if needed
+    # First retries, then circuit protector if needed
     pass
 ```
 
@@ -148,37 +148,37 @@ def resilient_operation():
 def is_retryable_exception(exc):
     return isinstance(exc, (ConnectionError, TimeoutError))
 
-retry_policy = RetryPolicy(
+retry_policy = RetryWithBackoffPolicy(
     max_retries=3,
-    handle=is_retryable_exception
+    should_handle=is_retryable_exception
 )
 ```
 
-### Monitoring State Changes
+### Monitoring Status Changes
 
 ```python
-def handle_state_change(policy, old_state, new_state):
-    print(f"Circuit breaker state changed: {old_state} -> {new_state}")
+def handle_status_change(policy, old_status, new_status):
+    print(f"Circuit protector status changed: {old_status} -> {new_status}")
 
-breaker = CircuitBreakerPolicy(
+protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
-    on_state_change=handle_state_change
+    on_status_change=handle_status_change
 )
 ```
 
-### Accessing Execution History
+### Accessing Execution Log
 
 ```python
-breaker = CircuitBreakerPolicy(failure_threshold=Fraction(2, 5))
+protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
 
-@breaker
+@protector
 def service_call():
     # Your operation
     pass
 
 # Access historical data
-print(f"Current state: {breaker.state}")
-print(f"Recent successes/failures: {list(breaker.history)}")
+print(f"Current status: {protector.status}")
+print(f"Recent successes/failures: {list(protector.execution_log)}")
 ```
 
 ## Integration with Highway Workflow Engine
@@ -188,29 +188,29 @@ Highway Circuit Breaker is designed as a core component of the Highway Workflow 
 - Automatically handle failures in workflow steps
 - Provide graceful degradation when external services are unavailable
 - Maintain system reliability under partial failure conditions
-- Enable rapid recovery through circuit breaker's state management
+- Enable rapid recovery through circuit protector's status management
 
 When used together, the Highway Workflow Engine and Highway Circuit Breaker provide a comprehensive solution for building robust, distributed applications that can withstand network failures, service outages, and other common distributed system challenges.
 
 ## Best Practices
 
-1. **Set Appropriate Thresholds**: Configure failure thresholds based on your service's typical error rates
+1. **Set Appropriate Limits**: Configure failure limits based on your service's typical error rates
 2. **Use Meaningful Cooldowns**: Balance between detecting recovery and avoiding thrashing
-3. **Monitor in Production**: Track circuit breaker states and failure rates
+3. **Monitor in Production**: Track circuit protector statuses and failure rates
 4. **Test Your Configuration**: Verify your resilience patterns under various failure scenarios
-5. **Combine Patterns Thoughtfully**: Use failsafe to combine policies in the right order
+5. **Combine Patterns Thoughtfully**: Use safety net to combine policies in the right order
 
 ## Troubleshooting
 
-### Circuit Breaker Stays Open
+### Circuit Protector Stays Open
 
-If your circuit breaker stays in the OPEN state longer than expected:
+If your circuit protector stays in the OPEN status longer than expected:
 - Check that your cooldown period is appropriate
-- Verify that your success threshold can be met
+- Verify that your success limit can be met
 - Ensure your service has actually recovered
 
 ### Retries Exceeding Expected Count
 
 If operations are being retried more than configured:
-- Verify your `handle` predicate correctly identifies retryable exceptions
+- Verify your `should_handle` predicate correctly identifies retryable exceptions
 - Check for exceptions being raised within your retry policy

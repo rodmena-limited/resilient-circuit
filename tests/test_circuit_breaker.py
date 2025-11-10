@@ -6,155 +6,155 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from highway_circutbreaker.circuit_breaker import CircuitBreakerPolicy, State
-from highway_circutbreaker.exceptions import CircuitBreakerOpenError
+from highway_circutbreaker.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
+from highway_circutbreaker.exceptions import ProtectedCallError
 
 
-class TestCircuitBreaker:
+class TestCircuitProtector:
     @pytest.fixture
-    def breaker(self):
-        yield CircuitBreakerPolicy(cooldown=timedelta(milliseconds=50))
+    def protector(self):
+        yield CircuitProtectorPolicy(cooldown=timedelta(milliseconds=50))
 
     def test_should_construct_policy_with_defaults(self):
         # given
-        breaker = CircuitBreakerPolicy()
+        protector = CircuitProtectorPolicy()
 
         # then
-        assert breaker.cooldown == timedelta(0)
-        assert breaker.failure_threshold == Fraction(1, 1)
-        assert breaker.success_threshold == Fraction(1, 1)
+        assert protector.cooldown == timedelta(0)
+        assert protector.failure_limit == Fraction(1, 1)
+        assert protector.success_limit == Fraction(1, 1)
 
-    def test_should_return_result_when_execution_successful(self, breaker):
+    def test_should_return_result_when_execution_successful(self, protector):
         # given
         method = Mock(return_value="test")
 
         # when
-        result = breaker(method)()
+        result = protector(method)()
 
         # then
         assert result == "test"
 
-    def test_should_open_and_propagate_error_when_execution_fails(self, breaker):
+    def test_should_open_and_propagate_error_when_execution_fails(self, protector):
         # given
         method = Mock(side_effect=RuntimeError)
 
         # when
         with pytest.raises(RuntimeError):
-            breaker(method)()
+            protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
 
     def test_should_stay_open_and_not_execute_until_cooldown_period_lapses(
-        self, breaker
+        self, protector
     ):
         # given
         method = Mock()
-        breaker.state = State.OPEN
+        protector.status = CircuitStatus.OPEN
 
         # when / then
-        with pytest.raises(CircuitBreakerOpenError):
-            breaker(method)()
+        with pytest.raises(ProtectedCallError):
+            protector(method)()
         assert method.call_count == 0
 
-    def test_should_become_half_open_after_cooldown_period_lapses(self, breaker):
+    def test_should_become_half_open_after_cooldown_period_lapses(self, protector):
         # given
         method = Mock()
-        breaker.state = State.OPEN
+        protector.status = CircuitStatus.OPEN
 
         # when
         sleep(0.06)
-        breaker(method)()
+        protector(method)()
 
         # then
-        assert breaker.state is State.HALF_OPEN
+        assert protector.status is CircuitStatus.HALF_OPEN
 
-    def test_should_stay_open_if_fails_after_cooldown_period_lapses(self, breaker):
+    def test_should_stay_open_if_fails_after_cooldown_period_lapses(self, protector):
         # given
         method = Mock(side_effect=RuntimeError)
-        breaker.state = State.OPEN
+        protector.status = CircuitStatus.OPEN
 
         # when
         sleep(0.06)
         with pytest.raises(RuntimeError):
-            breaker(method)()
+            protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
 
-    def test_should_open_when_fails_under_half_open_state(self, breaker):
+    def test_should_open_when_fails_under_half_open_state(self, protector):
         # given
         method = Mock(side_effect=RuntimeError)
-        breaker.state = State.HALF_OPEN
+        protector.status = CircuitStatus.HALF_OPEN
 
         # when
         with pytest.raises(RuntimeError):
-            breaker(method)()
+            protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
         assert method.call_count == 1
 
-    def test_should_close_when_succeeds_under_half_open_state(self, breaker):
+    def test_should_close_when_succeeds_under_half_open_state(self, protector):
         # given
         method = Mock()
-        breaker.state = State.HALF_OPEN
+        protector.status = CircuitStatus.HALF_OPEN
 
         # when
-        breaker(method)()
+        protector(method)()
 
         # then
-        assert breaker.state is State.CLOSED
+        assert protector.status is CircuitStatus.CLOSED
 
-    def test_should_provide_history_of_executions(self, breaker):
+    def test_should_provide_history_of_executions(self, protector):
         # given
         method = Mock()
 
         # when
-        breaker(method)()
+        protector(method)()
 
         # then
-        assert breaker.history.successes == 1
-        assert breaker.history.failures == 0
+        assert protector.execution_log.success_count == 1
+        assert protector.execution_log.failure_count == 0
 
-    def test_should_keep_history_of_previous_execution_when_is_open(self, breaker):
+    def test_should_keep_history_of_previous_execution_when_is_open(self, protector):
         # given
         method = Mock(side_effect=RuntimeError)
 
         # when
         for _ in range(2):
             with suppress(Exception):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
-        assert breaker.history.successes == 0
-        assert breaker.history.failures == 1
+        assert protector.status is CircuitStatus.OPEN
+        assert protector.execution_log.success_count == 0
+        assert protector.execution_log.failure_count == 1
 
     # noinspection PyTypeChecker
-    def test_should_invoke_on_state_change_when_state_is_changed(self, breaker):
+    def test_should_invoke_on_status_change_when_status_is_changed(self, protector):
         # given
         state_change_callback = Mock()
-        breaker = CircuitBreakerPolicy(on_state_change=state_change_callback)
+        protector = CircuitProtectorPolicy(on_status_change=state_change_callback)
 
         # when
-        breaker.state = State.OPEN
-        breaker.state = State.HALF_OPEN
+        protector.status = CircuitStatus.OPEN
+        protector.status = CircuitStatus.HALF_OPEN
 
         # then
         assert state_change_callback.call_count == 2
         state_change_callback.assert_has_calls(
             [
-                call(breaker, State.CLOSED, State.OPEN),
-                call(breaker, State.OPEN, State.HALF_OPEN),
+                call(protector, CircuitStatus.CLOSED, CircuitStatus.OPEN),
+                call(protector, CircuitStatus.OPEN, CircuitStatus.HALF_OPEN),
             ]
         )
 
 
-class TestCircuitBreakerWithThresholds:
-    def test_should_open_after_reaching_failure_threshold(self):
+class TestCircuitProtectorWithLimits:
+    def test_should_open_after_reaching_failure_limit(self):
         # given
-        breaker = CircuitBreakerPolicy(failure_threshold=Fraction(2, 5))
+        protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
         method = Mock(
             side_effect=[
                 "response-1",
@@ -169,20 +169,20 @@ class TestCircuitBreakerWithThresholds:
         )
         # simulate history of successful executions
         for _ in range(5):
-            breaker(Mock())()
+            protector(Mock())()
 
         # when
         for _ in range(8):
             with suppress(RuntimeError):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
         assert method.call_count == 8
 
-    def test_should_stay_closed_before_reaching_failure_threshold(self):
+    def test_should_stay_closed_before_reaching_failure_limit(self):
         # given
-        breaker = CircuitBreakerPolicy(failure_threshold=Fraction(3, 5))
+        protector = CircuitProtectorPolicy(failure_limit=Fraction(3, 5))
         method = Mock(
             side_effect=[
                 "response-1",
@@ -197,24 +197,24 @@ class TestCircuitBreakerWithThresholds:
         )
         # simulate history of successful executions
         for _ in range(5):
-            breaker(Mock())()
+            protector(Mock())()
 
         # when
         for _ in range(8):
             with suppress(RuntimeError):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.CLOSED
+        assert protector.status is CircuitStatus.CLOSED
         assert method.call_count == 8
 
-    def test_should_close_after_reaching_success_threshold(self):
+    def test_should_close_after_reaching_success_limit(self):
         # given
-        breaker = CircuitBreakerPolicy(
-            success_threshold=Fraction(3, 5),
-            failure_threshold=Fraction(2, 10),
+        protector = CircuitProtectorPolicy(
+            success_limit=Fraction(3, 5),
+            failure_limit=Fraction(2, 10),
         )
-        breaker.state = State.HALF_OPEN
+        protector.status = CircuitStatus.HALF_OPEN
         method = Mock(
             side_effect=[
                 RuntimeError,
@@ -232,17 +232,17 @@ class TestCircuitBreakerWithThresholds:
         # when
         for _ in range(9):
             with suppress(RuntimeError):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.CLOSED
+        assert protector.status is CircuitStatus.CLOSED
 
-    def test_should_open_according_to_failure_threshold_when_success_threshold_not_set(
+    def test_should_open_according_to_failure_limit_when_success_limit_not_set(
         self,
     ):
         # given
-        breaker = CircuitBreakerPolicy(failure_threshold=Fraction(2, 5))
-        breaker.state = State.HALF_OPEN
+        protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
+        protector.status = CircuitStatus.HALF_OPEN
         method = Mock(
             side_effect=[
                 RuntimeError,
@@ -256,15 +256,15 @@ class TestCircuitBreakerWithThresholds:
         # when
         for _ in range(5):
             with suppress(RuntimeError):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
 
-    def test_should_stay_open_until_reaching_success_threshold(self):
+    def test_should_stay_open_until_reaching_success_limit(self):
         # given
-        breaker = CircuitBreakerPolicy(success_threshold=Fraction(4, 5))
-        breaker.state = State.OPEN
+        protector = CircuitProtectorPolicy(success_limit=Fraction(4, 5))
+        protector.status = CircuitStatus.OPEN
         method = Mock(
             side_effect=[
                 "response-1",
@@ -279,33 +279,33 @@ class TestCircuitBreakerWithThresholds:
         # when
         for _ in range(6):
             with suppress(RuntimeError):
-                breaker(method)()
+                protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
 
 
-class TestCircuitBreakerWithExceptionHandling:
+class TestCircuitProtectorWithExceptionHandling:
     def test_should_open_when_exception_must_be_handled(self):
         # given
-        breaker = CircuitBreakerPolicy(handle=lambda e: isinstance(e, ValueError))
+        protector = CircuitProtectorPolicy(should_handle=lambda e: isinstance(e, ValueError))
         method = Mock(side_effect=ValueError)
 
         # when
         with pytest.raises(ValueError):
-            breaker(method)()
+            protector(method)()
 
         # then
-        assert breaker.state is State.OPEN
+        assert protector.status is CircuitStatus.OPEN
 
     def test_should_stay_closed_when_exception_must_not_be_handled(self):
         # given
-        breaker = CircuitBreakerPolicy(handle=lambda e: isinstance(e, RuntimeError))
+        protector = CircuitProtectorPolicy(should_handle=lambda e: isinstance(e, RuntimeError))
         method = Mock(side_effect=ValueError)
 
         # when
         with pytest.raises(ValueError):
-            breaker(method)()
+            protector(method)()
 
         # then
-        assert breaker.state is State.CLOSED
+        assert protector.status is CircuitStatus.CLOSED

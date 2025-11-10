@@ -2,26 +2,26 @@ from typing import Callable, Sequence, TypeVar
 
 from typing_extensions import ParamSpec
 
-from highway_circutbreaker.policy import Policy
+from highway_circutbreaker.policy import ProtectionPolicy
 
 R = TypeVar("R")
 P = ParamSpec("P")
 
 
-class Failsafe:
+class SafetyNet:
     """Decorates function with given policies.
 
-    Failsafe will handle execution results in reverse, with last policy applied first.
+    SafetyNet will handle execution results in reverse, with last policy applied first.
 
     Example:
-        >>> from highway_circutbreaker import Failsafe, RetryPolicy, CircuitBreakerPolicy
+        >>> from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
         >>>
-        >>> @Failsafe(policies=(RetryPolicy(), CircuitBreakerPolicy()))
+        >>> @SafetyNet(policies=(RetryWithBackoffPolicy(), CircuitProtectorPolicy()))
         >>> def some_method() -> bool:
         >>>     return True
     """
 
-    def __init__(self, *, policies: Sequence[Policy]) -> None:
+    def __init__(self, *, policies: Sequence[ProtectionPolicy]) -> None:
         if len(policies) != len(set(policies)):
             raise ValueError("All policies must be unique.")
 

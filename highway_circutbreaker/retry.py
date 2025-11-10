@@ -4,25 +4,25 @@ from typing import Callable, Optional, TypeVar
 
 from typing_extensions import ParamSpec
 
-from highway_circutbreaker.backoff import Backoff
-from highway_circutbreaker.exceptions import RetriesExceeded
-from highway_circutbreaker.policy import Policy
+from highway_circutbreaker.backoff import ExponentialDelay
+from highway_circutbreaker.exceptions import RetryLimitReached
+from highway_circutbreaker.policy import ProtectionPolicy
 
 R = TypeVar("R")
 P = ParamSpec("P")
 
 
-class RetryPolicy(Policy):
+class RetryWithBackoffPolicy(ProtectionPolicy):
     def __init__(
         self,
         *,
-        backoff: Optional[Backoff] = None,
+        backoff: Optional[ExponentialDelay] = None,
         max_retries: int = 3,
-        handle: Callable[[Exception], bool] = lambda e: True,
+        should_handle: Callable[[Exception], bool] = lambda e: True,
     ):
         self.max_attempts = max_retries + 1
         self.backoff = backoff
-        self.can_handle = handle
+        self.should_consider_failure = should_handle
 
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
@@ -34,7 +34,7 @@ class RetryPolicy(Policy):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:  # pylint: disable=broad-except
-                    if not self.can_handle(e):
+                    if not self.should_consider_failure(e):
                         raise
                     last_exception = e
 
@@ -42,6 +42,6 @@ class RetryPolicy(Policy):
                 if self.backoff:
                     sleep(self.backoff.for_attempt(attempt))
 
-            raise RetriesExceeded from last_exception
+            raise RetryLimitReached from last_exception
 
         return decorated
