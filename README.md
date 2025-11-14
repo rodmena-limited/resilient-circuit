@@ -23,6 +23,20 @@ This library implements the Circuit Breaker and Retry patterns, offering elegant
 pip install highway_circutbreaker
 ```
 
+### PostgreSQL Storage Support (Optional)
+
+For shared state across multiple instances, you can use PostgreSQL as the storage backend:
+
+```bash
+pip install highway_circutbreaker[postgres]
+```
+
+Or install the dependencies separately:
+
+```bash
+pip install psycopg[binary] python-dotenv
+```
+
 ## Features
 
 - **Circuit Breaker Pattern**: Prevents cascading failures in distributed systems
@@ -31,6 +45,7 @@ pip install highway_circutbreaker
 - **Decorator Support**: Clean, easy-to-read syntax with Python decorators
 - **Fine-grained Control**: Configure failure thresholds, cooldown periods, and backoff strategies
 - **State Monitoring**: Track breaker state and execution history
+- **Shared State Storage**: Optional PostgreSQL backend for distributed applications
 
 ## Quick Start
 
@@ -179,6 +194,137 @@ if protector.status == CircuitState.OPEN:
 else:
     service_call()  # Execute call if not in OPEN status
 ```
+
+## PostgreSQL Shared Storage
+
+For distributed applications running across multiple instances, Highway Circuit Breaker supports PostgreSQL as a shared storage backend. This allows circuit breaker state to be synchronized across all instances of your application.
+
+### Setting Up PostgreSQL Storage
+
+1. **Install PostgreSQL dependencies:**
+
+```bash
+pip install highway_circutbreaker[postgres]
+```
+
+2. **Set up the database:**
+
+Use the provided setup script:
+
+```bash
+./setup_postgres.sh -p your_password
+```
+
+Or manually create the database and table:
+
+```sql
+CREATE DATABASE highway_circutbreaker_db;
+
+\c highway_circutbreaker_db
+
+CREATE TABLE IF NOT EXISTS hw_circuit_breakers (
+    resource_key VARCHAR(255) PRIMARY KEY,
+    state VARCHAR(50) NOT NULL CHECK (state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
+    failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
+    open_until TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_hw_circuit_breakers_state ON hw_circuit_breakers(state);
+CREATE INDEX idx_hw_circuit_breakers_open_until ON hw_circuit_breakers(open_until) WHERE open_until IS NOT NULL;
+```
+
+3. **Configure environment variables:**
+
+Create a `.env` file in your project root:
+
+```env
+HW_DB_HOST=localhost
+HW_DB_PORT=5432
+HW_DB_NAME=highway_circutbreaker_db
+HW_DB_USER=postgres
+HW_DB_PASSWORD=your_password
+```
+
+### Using PostgreSQL Storage
+
+Once configured, the circuit breaker will automatically use PostgreSQL storage when environment variables are present:
+
+```python
+from datetime import timedelta
+from fractions import Fraction
+from highway_circutbreaker import CircuitProtectorPolicy
+
+# This will automatically use PostgreSQL if HW_DB_* env vars are set
+circuit_breaker = CircuitProtectorPolicy(
+    resource_key="payment_service",
+    cooldown=timedelta(seconds=60),
+    failure_limit=Fraction(5, 10),  # 50% failure rate
+    success_limit=Fraction(3, 3)    # 3 consecutive successes to close
+)
+
+@circuit_breaker
+def process_payment():
+    # Your payment processing logic
+    pass
+```
+
+### Benefits of PostgreSQL Storage
+
+- **Shared State**: Circuit breaker state is synchronized across all application instances
+- **Persistence**: State survives application restarts
+- **Monitoring**: Query circuit breaker state directly from the database
+- **Scalability**: Supports high-concurrency applications
+- **Atomic Operations**: Uses PostgreSQL row-level locking for thread-safe updates
+
+### Monitoring Circuit Breakers
+
+Query the database to monitor circuit breaker status:
+
+```sql
+-- View all circuit breakers and their status
+SELECT resource_key, state, failure_count, open_until, updated_at
+FROM hw_circuit_breakers
+ORDER BY updated_at DESC;
+
+-- Find all open circuit breakers
+SELECT resource_key, open_until
+FROM hw_circuit_breakers
+WHERE state = 'OPEN';
+
+-- Check failure rates for specific services
+SELECT resource_key, failure_count
+FROM hw_circuit_breakers
+WHERE state = 'CLOSED';
+```
+
+### Fallback to In-Memory Storage
+
+If PostgreSQL is not configured or unavailable, the circuit breaker automatically falls back to in-memory storage:
+
+```python
+# No environment variables set - uses in-memory storage
+circuit_breaker = CircuitProtectorPolicy(resource_key="my_service")
+
+# Or explicitly specify in-memory storage
+from highway_circutbreaker.storage import InMemoryStorage
+
+circuit_breaker = CircuitProtectorPolicy(
+    resource_key="my_service",
+    storage=InMemoryStorage()
+)
+```
+
+### Environment Variables Reference
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HW_DB_HOST` | PostgreSQL host | Required |
+| `HW_DB_PORT` | PostgreSQL port | `5432` |
+| `HW_DB_NAME` | Database name | `highway_circutbreaker_db` |
+| `HW_DB_USER` | Database user | `postgres` |
+| `HW_DB_PASSWORD` | Database password | Required |
 
 ## Highway Workflow Engine Integration
 

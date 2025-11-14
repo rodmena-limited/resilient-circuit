@@ -1,5 +1,6 @@
 import abc
 import enum
+import logging
 from datetime import datetime, timedelta
 from fractions import Fraction
 from functools import wraps
@@ -10,9 +11,12 @@ from typing_extensions import ParamSpec
 from highway_circutbreaker.buffer import BinaryCircularBuffer
 from highway_circutbreaker.exceptions import ProtectedCallError
 from highway_circutbreaker.policy import ProtectionPolicy
+from highway_circutbreaker.storage import CircuitBreakerStorage, InMemoryStorage, create_storage
 
 R = TypeVar("R")
 P = ParamSpec("P")
+
+logger = logging.getLogger(__name__)
 
 
 class CircuitStatus(enum.Enum):
@@ -27,6 +31,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __init__(
         self,
         *,
+        resource_key: str,
+        storage: Optional[CircuitBreakerStorage] = None,
         cooldown: timedelta = timedelta(0),
         failure_limit: Fraction = DEFAULT_THRESHOLD,
         success_limit: Fraction = DEFAULT_THRESHOLD,
@@ -35,12 +41,67 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             Callable[["CircuitProtectorPolicy", CircuitStatus, CircuitStatus], None]
         ] = None,
     ) -> None:
+        self.resource_key = resource_key
+        self.storage = storage or create_storage()
         self.cooldown = cooldown
         self.success_limit = success_limit
         self.failure_limit = failure_limit
         self.should_consider_failure = should_handle
         self._on_status_change = on_status_change
-        self._status: CircuitStatusBase = StatusClosed(policy=self)
+
+        # Load state from storage
+        self._load_state()
+
+    def _load_state(self) -> None:
+        """Load circuit breaker state from storage."""
+        try:
+            state_data = self.storage.get_state(self.resource_key)
+            if state_data:
+                # Restore state from storage
+                state = CircuitStatus(state_data["state"])
+                failure_count = state_data.get("failure_count", 0)
+                open_until = state_data.get("open_until", 0)
+
+                # Initialize status based on stored state
+                if state == CircuitStatus.CLOSED:
+                    self._status = StatusClosed(policy=self, failure_count=failure_count)
+                elif state == CircuitStatus.OPEN:
+                    self._status = StatusOpen(
+                        policy=self,
+                        previous_status=StatusClosed(policy=self),
+                        open_until=open_until
+                    )
+                else:  # HALF_OPEN
+                    self._status = StatusHalfOpen(policy=self, failure_count=failure_count)
+
+                logger.debug(f"Loaded circuit breaker state for {self.resource_key}: {state.value}")
+            else:
+                # No state found, start with CLOSED
+                self._status = StatusClosed(policy=self)
+                logger.debug(f"No stored state found for {self.resource_key}, starting with CLOSED")
+        except Exception as e:
+            logger.error(f"Failed to load state for {self.resource_key}: {e}")
+            # Fallback to default state
+            self._status = StatusClosed(policy=self)
+
+    def _save_state(self) -> None:
+        """Save circuit breaker state to storage."""
+        try:
+            state_data = {
+                "state": self._status.status_type.value,
+                "failure_count": getattr(self._status, 'failure_count', 0),
+                "open_until": getattr(self._status, 'open_until', 0)
+            }
+
+            self.storage.set_state(
+                self.resource_key,
+                state_data["state"],
+                state_data["failure_count"],
+                state_data["open_until"]
+            )
+            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_data['state']}")
+        except Exception as e:
+            logger.error(f"Failed to save state for {self.resource_key}: {e}")
 
     @property
     def execution_log(self) -> BinaryCircularBuffer:
@@ -61,6 +122,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             self._status = StatusHalfOpen(policy=self)
 
         self.on_status_change(old_status, new_status)
+        self._save_state()  # Persist state change
 
     def on_status_change(self, current: CircuitStatus, new: CircuitStatus) -> None:
         """This method is called whenever protector changes its status."""
@@ -78,9 +140,11 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                     self._status.mark_failure()
                 else:
                     self._status.mark_success()
+                self._save_state()  # Persist state after exception
                 raise
             else:
                 self._status.mark_success()
+                self._save_state()  # Persist state after success
                 return result
 
         return decorated
@@ -115,8 +179,9 @@ class CircuitStatusBase(abc.ABC):
 class StatusClosed(CircuitStatusBase):
     status_type = CircuitStatus.CLOSED
 
-    def __init__(self, policy: CircuitProtectorPolicy):
+    def __init__(self, policy: CircuitProtectorPolicy, failure_count: int = 0):
         super().__init__(policy)
+        self.failure_count = failure_count
         self.execution_log = BinaryCircularBuffer(size=policy.failure_limit.denominator)
 
     def validate_execution(self) -> None:
@@ -124,6 +189,7 @@ class StatusClosed(CircuitStatusBase):
         pass
 
     def mark_failure(self) -> None:
+        self.failure_count += 1
         self.execution_log.add(False)
         if (
             self.execution_log.is_full
@@ -132,6 +198,7 @@ class StatusClosed(CircuitStatusBase):
             self.policy.status = CircuitStatus.OPEN
 
     def mark_success(self) -> None:
+        self.failure_count = 0  # Reset failure count on success
         self.execution_log.add(True)
 
 

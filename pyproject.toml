@@ -36,6 +36,10 @@ dev = [
     "pytest-mock>=3.0.0",
     "ruff>=0.1.0",
 ]
+postgres = [
+    "psycopg[binary]>=3.1.0",
+    "python-dotenv>=1.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/rodmena-limited/highway_circutbreaker"
