@@ -31,7 +31,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __init__(
         self,
         *,
-        resource_key: str,
+        resource_key: Optional[str] = None,
         storage: Optional[CircuitBreakerStorage] = None,
         cooldown: timedelta = timedelta(0),
         failure_limit: Fraction = DEFAULT_THRESHOLD,
@@ -41,7 +41,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             Callable[["CircuitProtectorPolicy", CircuitStatus, CircuitStatus], None]
         ] = None,
     ) -> None:
-        self.resource_key = resource_key
+        # Generate a default resource key if not provided for backward compatibility
+        self.resource_key = resource_key or f"anonymous_{id(self)}"
         self.storage = storage or create_storage()
         self.cooldown = cooldown
         self.success_limit = success_limit
@@ -66,11 +67,10 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 if state == CircuitStatus.CLOSED:
                     self._status = StatusClosed(policy=self, failure_count=failure_count)
                 elif state == CircuitStatus.OPEN:
-                    self._status = StatusOpen(
-                        policy=self,
-                        previous_status=StatusClosed(policy=self),
-                        open_until=open_until
-                    )
+                    # For OPEN state, we need a previous status to pass to the constructor
+                    # We'll use a temporary closed status with same failure count
+                    temp_status = StatusClosed(policy=self, failure_count=failure_count)
+                    self._status = StatusOpen(policy=self, previous_status=temp_status, open_until=open_until)
                 else:  # HALF_OPEN
                     self._status = StatusHalfOpen(policy=self, failure_count=failure_count)
 
@@ -115,11 +115,18 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def status(self, new_status: CircuitStatus) -> None:
         old_status = self.status
         if new_status is CircuitStatus.CLOSED:
-            self._status = StatusClosed(policy=self)
+            # When transitioning to CLOSED, reset failure count
+            self._status = StatusClosed(policy=self, failure_count=0)
         elif new_status is CircuitStatus.OPEN:
-            self._status = StatusOpen(policy=self, previous_status=self._status)
-        else:
-            self._status = StatusHalfOpen(policy=self)
+            # When transitioning to OPEN, keep the failure count from current status
+            current_failure_count = getattr(self._status, 'failure_count', 0)
+            # Calculate the open_until timestamp based on current time and cooldown
+            from datetime import datetime
+            open_until = (datetime.now() + self.cooldown).timestamp()
+            self._status = StatusOpen(policy=self, previous_status=self._status, open_until=open_until)
+        else:  # HALF_OPEN
+            # When transitioning to HALF_OPEN, reset failure count
+            self._status = StatusHalfOpen(policy=self, failure_count=0)
 
         self.on_status_change(old_status, new_status)
         self._save_state()  # Persist state change
@@ -181,6 +188,7 @@ class StatusClosed(CircuitStatusBase):
 
     def __init__(self, policy: CircuitProtectorPolicy, failure_count: int = 0):
         super().__init__(policy)
+        # Initialize failure_count for StatusClosed
         self.failure_count = failure_count
         self.execution_log = BinaryCircularBuffer(size=policy.failure_limit.denominator)
 
@@ -189,7 +197,7 @@ class StatusClosed(CircuitStatusBase):
         pass
 
     def mark_failure(self) -> None:
-        self.failure_count += 1
+        self.failure_count += 1  # Increment failure count
         self.execution_log.add(False)
         if (
             self.execution_log.is_full
@@ -205,13 +213,28 @@ class StatusClosed(CircuitStatusBase):
 class StatusOpen(CircuitStatusBase):
     status_type = CircuitStatus.OPEN
 
-    def __init__(self, policy: CircuitProtectorPolicy, previous_status: CircuitStatusBase) -> None:
+    def __init__(self, policy: CircuitProtectorPolicy, previous_status: CircuitStatusBase, open_until: float = 0) -> None:
         super().__init__(policy)
         self.execution_log = previous_status.execution_log
-        self.transitioned_at = datetime.now()
+        # Handle setting failure_count from previous_status if it exists
+        if hasattr(previous_status, 'failure_count'):
+            self.failure_count = getattr(previous_status, 'failure_count', 0)
+        else:
+            self.failure_count = 0
+
+        # Store the timestamp when the OPEN state should end (cooldown period)
+        # If open_until is 0, circuit should be blocked for the full cooldown period
+        from datetime import datetime
+        if open_until and open_until > 0:
+            self.open_until_timestamp = open_until  # This is when cooldown ends
+        else:
+            # Calculate when cooldown should end based on current time and policy cooldown
+            self.open_until_timestamp = (datetime.now() + policy.cooldown).timestamp()
 
     def validate_execution(self) -> None:
-        if datetime.now() - self.transitioned_at < self.policy.cooldown:
+        from datetime import datetime
+        # Check if we're still in the cooldown period
+        if datetime.now().timestamp() < self.open_until_timestamp:
             raise ProtectedCallError
 
     def mark_failure(self) -> None:
@@ -225,8 +248,9 @@ class StatusOpen(CircuitStatusBase):
 class StatusHalfOpen(CircuitStatusBase):
     status_type = CircuitStatus.HALF_OPEN
 
-    def __init__(self, policy: CircuitProtectorPolicy):
+    def __init__(self, policy: CircuitProtectorPolicy, failure_count: int = 0):
         super().__init__(policy)
+        self.failure_count = failure_count
         self.use_success = policy.success_limit != policy.DEFAULT_THRESHOLD
         self.execution_log = BinaryCircularBuffer(
             size=(
@@ -241,10 +265,12 @@ class StatusHalfOpen(CircuitStatusBase):
         pass
 
     def mark_failure(self) -> None:
+        self.failure_count += 1
         self.execution_log.add(False)
         self._check_limit()
 
     def mark_success(self) -> None:
+        self.failure_count = 0  # Reset on success
         self.execution_log.add(True)
         self._check_limit()
 

@@ -3,8 +3,9 @@
 <div align="center">
 
 [![PyPI version](https://badge.fury.io/py/highway-circutbreaker.svg)](https://badge.fury.io/py/highway-circutbreaker)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python Versions](https://img.shields.io/pypi/pyversions/highway-circutbreaker.svg)](https://pypi.org/project/highway-circutbreaker/)
+[![Documentation Status](https://readthedocs.org/projects/highway-circutbreaker/badge/?version=latest)](https://highway-circutbreaker.readthedocs.io/)
 
 **Part of the Highway Workflow Engine** - A robust resilience library for Python applications
 </div>
@@ -16,6 +17,8 @@
 Highway Circuit Breaker is a powerful resilience library designed to make your Python applications fault-tolerant and highly available. It's an integral component of the Highway Workflow Engine, providing essential failure handling capabilities for modern distributed systems.
 
 This library implements the Circuit Breaker and Retry patterns, offering elegant solutions for handling failures in networked systems, external service calls, and unreliable dependencies.
+
+For comprehensive documentation, visit our [Read the Docs page](https://highway-circutbreaker.readthedocs.io/).
 
 ## Installation
 
@@ -388,7 +391,7 @@ We welcome contributions to Highway Circuit Breaker! See our [contributing guide
 
 ## License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+Distributed under the Apache Software License 2.0. See [LICENSE](LICENSE) for more information.
 
 ## Support
 

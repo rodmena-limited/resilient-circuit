@@ -7,14 +7,14 @@ name = "highway_circutbreaker"
 version = "0.3.0"
 description = "A circuit breaker and retry library for handling failures in Python applications"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache Software License 2.0"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -46,6 +46,7 @@ postgres = [
 [project.urls]
 Homepage = "https://github.com/rodmena-limited/highway_circutbreaker"
 Repository = "https://github.com/rodmena-limited/highway_circutbreaker"
+Documentation = "https://highway-circutbreaker.readthedocs.io"
 
 [project.scripts]
 highway-circutbreaker-cli = "highway_circutbreaker.cli:main"

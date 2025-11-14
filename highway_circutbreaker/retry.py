@@ -5,7 +5,7 @@ from typing import Callable, Optional, TypeVar
 from typing_extensions import ParamSpec
 
 from highway_circutbreaker.backoff import ExponentialDelay
-from highway_circutbreaker.exceptions import RetryLimitReached
+from highway_circutbreaker.exceptions import ProtectedCallError, RetryLimitReached
 from highway_circutbreaker.policy import ProtectionPolicy
 
 R = TypeVar("R")
