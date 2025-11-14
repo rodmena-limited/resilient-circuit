@@ -21,6 +21,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 requires-python = ">=3.9"
 dependencies = [
@@ -44,6 +46,9 @@ postgres = [
 [project.urls]
 Homepage = "https://github.com/rodmena-limited/highway_circutbreaker"
 Repository = "https://github.com/rodmena-limited/highway_circutbreaker"
+
+[project.scripts]
+highway-circutbreaker-cli = "highway_circutbreaker.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["highway_circutbreaker*"]

@@ -207,32 +207,17 @@ For distributed applications running across multiple instances, Highway Circuit 
 pip install highway_circutbreaker[postgres]
 ```
 
-2. **Set up the database:**
+2. **Create the database:**
 
-Use the provided setup script:
+You need to create the database first (the CLI assumes the database exists). Create it using your preferred method:
 
 ```bash
-./setup_postgres.sh -p your_password
+createdb -h localhost -p 5432 -U postgres highway_circutbreaker_db
 ```
 
-Or manually create the database and table:
-
+Or using psql:
 ```sql
 CREATE DATABASE highway_circutbreaker_db;
-
-\c highway_circutbreaker_db
-
-CREATE TABLE IF NOT EXISTS hw_circuit_breakers (
-    resource_key VARCHAR(255) PRIMARY KEY,
-    state VARCHAR(50) NOT NULL CHECK (state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
-    failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
-    open_until TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_hw_circuit_breakers_state ON hw_circuit_breakers(state);
-CREATE INDEX idx_hw_circuit_breakers_open_until ON hw_circuit_breakers(open_until) WHERE open_until IS NOT NULL;
 ```
 
 3. **Configure environment variables:**
@@ -245,6 +230,24 @@ HW_DB_PORT=5432
 HW_DB_NAME=highway_circutbreaker_db
 HW_DB_USER=postgres
 HW_DB_PASSWORD=your_password
+```
+
+4. **Use the CLI to set up the table:**
+
+```bash
+highway-circutbreaker-cli pg-setup
+```
+
+This command will read the database configuration from your environment variables and create the necessary table and indexes.
+
+You can also use additional options:
+- `--yes` to skip the confirmation prompt
+- `--dry-run` to see what would be done without making changes
+
+Example:
+```bash
+highway-circutbreaker-cli pg-setup --yes  # Skip confirmation
+highway-circutbreaker-cli pg-setup --dry-run  # Show what would be done
 ```
 
 ### Using PostgreSQL Storage
