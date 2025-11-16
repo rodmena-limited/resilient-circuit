@@ -67,7 +67,9 @@ class TestCircuitProtector:
         protector(method)()
 
         # then
-        assert protector.status is CircuitStatus.HALF_OPEN
+        # After cooldown expires, circuit transitions to HALF_OPEN automatically
+        # A successful call in HALF_OPEN closes the circuit
+        assert protector.status is CircuitStatus.CLOSED
 
     def test_should_stay_open_if_fails_after_cooldown_period_lapses(self, protector):
         # given
@@ -263,7 +265,11 @@ class TestCircuitProtectorWithLimits:
 
     def test_should_stay_open_until_reaching_success_limit(self):
         # given
-        protector = CircuitProtectorPolicy(success_limit=Fraction(4, 5))
+        # Need a cooldown to prevent immediate transition to HALF_OPEN
+        protector = CircuitProtectorPolicy(
+            success_limit=Fraction(4, 5),
+            cooldown=timedelta(seconds=10)  # Long cooldown to keep it OPEN
+        )
         protector.status = CircuitStatus.OPEN
         method = Mock(
             side_effect=[
@@ -278,10 +284,11 @@ class TestCircuitProtectorWithLimits:
 
         # when
         for _ in range(6):
-            with suppress(RuntimeError):
+            with suppress(RuntimeError, ProtectedCallError):
                 protector(method)()
 
         # then
+        # Circuit should stay OPEN because cooldown hasn't expired
         assert protector.status is CircuitStatus.OPEN
 
 

@@ -234,9 +234,14 @@ class StatusOpen(CircuitStatusBase):
 
     def validate_execution(self) -> None:
         from datetime import datetime
-        # Check if we're still in the cooldown period
-        if datetime.now().timestamp() < self.open_until_timestamp:
-            raise ProtectedCallError
+        # Check if cooldown period has expired
+        if datetime.now().timestamp() >= self.open_until_timestamp:
+            # Cooldown expired, transition to HALF_OPEN to allow test requests
+            self.policy.status = CircuitStatus.HALF_OPEN
+            return  # Allow execution in HALF_OPEN state
+
+        # Still in cooldown period, block execution
+        raise ProtectedCallError
 
     def mark_failure(self) -> None:
         # In OPEN status, errors are not recorded because execution is blocked
