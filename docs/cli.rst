@@ -1,12 +1,12 @@
 Command Line Interface
 ======================
 
-The Highway Circuit Breaker CLI provides utility commands for managing your circuit breaker setup.
+The Resilient Circuit CLI provides utility commands for managing your circuit breaker setup.
 
 Installation
 ------------
 
-After installing Highway Circuit Breaker, the CLI is available as ``highway-circutbreaker-cli``.
+After installing Resilient Circuit, the CLI is available as ``resilient-circuit-cli``.
 
 PostgreSQL Setup
 ----------------
@@ -18,13 +18,13 @@ Basic Usage
 
 .. code-block:: bash
 
-   highway-circutbreaker-cli pg-setup
+   resilient-circuit-cli pg-setup
 
 This command will:
 
 1. Load database configuration from environment variables (or .env file)
 2. Connect to the specified PostgreSQL database
-3. Create the ``hw_circuit_breakers`` table if it doesn't exist
+3. Create the ``rc_circuit_breakers`` table if it doesn't exist
 4. Create optimized indexes for performance
 5. Set up triggers for automatic timestamp updates
 
@@ -38,25 +38,25 @@ The ``pg-setup`` command supports several options:
 
    .. code-block:: bash
 
-      highway-circutbreaker-cli pg-setup --yes
+      resilient-circuit-cli pg-setup --yes
 
 --dry-run
    Show what would be done without making any actual changes to the database.
 
    .. code-block:: bash
 
-      highway-circutbreaker-cli pg-setup --dry-run
+      resilient-circuit-cli pg-setup --dry-run
 
 Environment Variables
 ~~~~~~~~~~~~~~~~~~~~~
 
 The CLI reads database configuration from environment variables:
 
-- ``HW_DB_HOST``: PostgreSQL host (default: localhost)
-- ``HW_DB_PORT``: PostgreSQL port (default: 5432)
-- ``HW_DB_NAME``: Database name (default: highway_circutbreaker_db)
-- ``HW_DB_USER``: Database user (default: postgres)
-- ``HW_DB_PASSWORD``: Database password
+- ``RC_DB_HOST``: PostgreSQL host (default: localhost)
+- ``RC_DB_PORT``: PostgreSQL port (default: 5432)
+- ``RC_DB_NAME``: Database name (default: resilient_circuit_db)
+- ``RC_DB_USER``: Database user (default: postgres)
+- ``RC_DB_PASSWORD``: Database password
 
 Example Configuration
 ~~~~~~~~~~~~~~~~~~~~~
@@ -65,14 +65,14 @@ Create a ``.env`` file:
 
 .. code-block:: ini
 
-   HW_DB_HOST=localhost
-   HW_DB_PORT=5432
-   HW_DB_NAME=my_circuit_breaker_db
-   HW_DB_USER=myuser
-   HW_DB_PASSWORD=mypassword
+   RC_DB_HOST=localhost
+   RC_DB_PORT=5432
+   RC_DB_NAME=my_circuit_breaker_db
+   RC_DB_USER=myuser
+   RC_DB_PASSWORD=mypassword
 
 Then run the setup:
 
 .. code-block:: bash
 
-   highway-circutbreaker-cli pg-setup
+   resilient-circuit-cli pg-setup

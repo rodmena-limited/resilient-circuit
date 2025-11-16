@@ -1,6 +1,6 @@
-# Highway Circuit Breaker - Usage Patterns
+# Resilient Circuit - Usage Patterns
 
-This document describes common usage patterns and real-world scenarios for Highway Circuit Breaker.
+This document describes common usage patterns and real-world scenarios for Resilient Circuit.
 
 ## Table of Contents
 1. [Basic Service Calls](#basic-service-calls)
@@ -19,7 +19,7 @@ For services that may occasionally fail:
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 service_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
@@ -41,7 +41,7 @@ For services that might have temporary issues:
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
 service_retry = RetryWithBackoffPolicy(
     max_retries=3,
@@ -68,7 +68,7 @@ def call_retryable_service(data):
 import sqlite3
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 db_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
@@ -90,7 +90,7 @@ def get_user_data(user_id):
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy
+from resilient_circuit import RetryWithBackoffPolicy
 
 db_retry = RetryWithBackoffPolicy(
     max_retries=2,
@@ -113,7 +113,7 @@ def update_user_data(user_id, data):
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
+from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
 # Create resilient API client
 api_safetynet = SafetyNet(
@@ -153,7 +153,7 @@ def fetch_external_data(query):
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 def is_api_error_relevant(exc):
     """Check if the error is one we should handle"""
@@ -188,7 +188,7 @@ def call_oauth_protected_api():
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 def is_transient_error(exc):
     """Only handle transient errors, not permanent failures"""
@@ -224,7 +224,7 @@ def process_queue_message(message):
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryPolicy
+from resilient_circuit import RetryPolicy
 
 item_retry_policy = RetryPolicy(
     max_retries=1,
@@ -261,7 +261,7 @@ def process_single_item(item):
 ```python
 from datetime import datetime, timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
+from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
 class CircuitProtectorMonitor:
     def __init__(self):
@@ -317,7 +317,7 @@ def monitored_service_call():
 import logging
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 # Configure logging
 logger = logging.getLogger(__name__)

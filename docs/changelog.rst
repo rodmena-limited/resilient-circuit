@@ -4,7 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.3.0] - 2025-11-14
 ### Added
 - PostgreSQL shared storage for distributed applications
-- CLI tool for database setup (`highway-circutbreaker-cli pg-setup`)
+- CLI tool for database setup (`resilient-circuit-cli pg-setup`)
 - Support for environment variable configuration
 - Optimized database schema with proper indexing
 - Row-level locking for atomic operations

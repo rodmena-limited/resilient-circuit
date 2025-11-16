@@ -1,20 +1,29 @@
-# .readthedocs.yaml
-# Read the Docs configuration file
+# Read the Docs configuration file for resilient-circuit
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
 version: 2
 
+# Set the OS, Python version and other tools
 build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
 
+# Build documentation with Sphinx
 sphinx:
   configuration: docs/conf.py
+  fail_on_warning: false
 
+# Build additional formats (PDF, ePub)
+formats:
+  - pdf
+  - epub
+
+# Python dependencies
 python:
   install:
     - method: pip
       path: .
       extra_requirements:
         - dev
+        - postgres

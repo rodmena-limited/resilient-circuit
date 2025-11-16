@@ -4,13 +4,13 @@ Quick Start
 Basic Usage
 -----------
 
-The Highway Circuit Breaker library provides a simple way to protect your functions from failures:
+The Resilient Circuit library provides a simple way to protect your functions from failures:
 
 .. code-block:: python
 
    from datetime import timedelta
    from fractions import Fraction
-   from highway_circutbreaker import CircuitProtectorPolicy
+   from resilient_circuit import CircuitProtectorPolicy
 
    # Create a circuit protector that trips after 3 failures in 10 attempts
    protector = CircuitProtectorPolicy(
@@ -39,7 +39,7 @@ You can customize the circuit breaker behavior with various options:
 
    from datetime import timedelta
    from fractions import Fraction
-   from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
+   from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
    def custom_exception_handler(exc):
        """Only handle specific exceptions"""
@@ -67,7 +67,7 @@ You can also use the retry pattern with exponential backoff:
 .. code-block:: python
 
    from datetime import timedelta
-   from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+   from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
    # Create an exponential backoff strategy
    backoff = ExponentialDelay(
@@ -98,7 +98,7 @@ You can combine circuit breaker and retry patterns using SafetyNet:
 
 .. code-block:: python
 
-   from highway_circutbreaker import SafetyNet, CircuitProtectorPolicy, RetryWithBackoffPolicy
+   from resilient_circuit import SafetyNet, CircuitProtectorPolicy, RetryWithBackoffPolicy
 
    # Combine both patterns using SafetyNet
    safety_net = SafetyNet(

@@ -1,6 +1,6 @@
-# Highway Circuit Breaker - Documentation
+# Resilient Circuit - Documentation
 
-Welcome to the Highway Circuit Breaker documentation. This library is part of the Highway Workflow Engine ecosystem and provides robust resilience patterns for Python applications.
+Welcome to the Resilient Circuit documentation. This library is part of the Highway Workflow Engine ecosystem and provides robust resilience patterns for Python applications.
 
 ## Documentation Structure
 
@@ -9,14 +9,14 @@ Welcome to the Highway Circuit Breaker documentation. This library is part of th
 - [usage_patterns.md](usage_patterns.md) - Real-world usage patterns and examples
 - [contributing.md](contributing.md) - Guidelines for contributing to the project
 
-## About Highway Circuit Breaker
+## About Resilient Circuit
 
-Highway Circuit Breaker is a Python library implementing the Circuit Breaker and Retry patterns. It's designed to help applications gracefully handle failures in distributed systems, preventing cascading failures and improving overall system reliability.
+Resilient Circuit is a Python library implementing the Circuit Breaker and Retry patterns. It's designed to help applications gracefully handle failures in distributed systems, preventing cascading failures and improving overall system reliability.
 
 As part of the Highway Workflow Engine, it integrates seamlessly with other resilience and workflow management components.
 
 ## Quick Links
 
-- [PyPI Package](https://pypi.org/project/highway-circutbreaker/)
-- [GitHub Repository](https://github.com/yourusername/highway_circutbreaker)
-- [Issue Tracker](https://github.com/yourusername/highway_circutbreaker/issues)
+- [PyPI Package](https://pypi.org/project/resilient-circuit/)
+- [GitHub Repository](https://github.com/yourusername/resilient_circuit)
+- [Issue Tracker](https://github.com/yourusername/resilient_circuit/issues)

@@ -4,7 +4,7 @@ API Reference
 CircuitProtectorPolicy
 ----------------------
 
-.. autoclass:: highway_circutbreaker.CircuitProtectorPolicy
+.. autoclass:: resilient_circuit.CircuitProtectorPolicy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,7 +12,7 @@ CircuitProtectorPolicy
 CircuitStatus
 -------------
 
-.. autoclass:: highway_circutbreaker.CircuitStatus
+.. autoclass:: resilient_circuit.CircuitStatus
    :members:
    :undoc-members:
    :show-inheritance:
@@ -20,7 +20,7 @@ CircuitStatus
 RetryWithBackoffPolicy
 ----------------------
 
-.. autoclass:: highway_circutbreaker.RetryWithBackoffPolicy
+.. autoclass:: resilient_circuit.RetryWithBackoffPolicy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,7 +28,7 @@ RetryWithBackoffPolicy
 SafetyNet
 ---------
 
-.. autoclass:: highway_circutbreaker.SafetyNet
+.. autoclass:: resilient_circuit.SafetyNet
    :members:
    :undoc-members:
    :show-inheritance:
@@ -36,7 +36,7 @@ SafetyNet
 ExponentialDelay
 ----------------
 
-.. autoclass:: highway_circutbreaker.ExponentialDelay
+.. autoclass:: resilient_circuit.ExponentialDelay
    :members:
    :undoc-members:
    :show-inheritance:
@@ -44,7 +44,7 @@ ExponentialDelay
 FixedDelay
 ----------
 
-.. autoclass:: highway_circutbreaker.FixedDelay
+.. autoclass:: resilient_circuit.FixedDelay
    :members:
    :undoc-members:
    :show-inheritance:
@@ -52,17 +52,17 @@ FixedDelay
 Storage Classes
 ---------------
 
-.. autoclass:: highway_circutbreaker.storage.CircuitBreakerStorage
+.. autoclass:: resilient_circuit.storage.CircuitBreakerStorage
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: highway_circutbreaker.storage.InMemoryStorage
+.. autoclass:: resilient_circuit.storage.InMemoryStorage
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: highway_circutbreaker.storage.PostgresStorage
+.. autoclass:: resilient_circuit.storage.PostgresStorage
    :members:
    :undoc-members:
    :show-inheritance:

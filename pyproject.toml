@@ -42,6 +42,11 @@ postgres = [
     "psycopg[binary]>=3.1.0",
     "python-dotenv>=1.0.0",
 ]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "sphinx-autodoc-typehints>=1.25.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/rodmena-limited/resilient-circuit"

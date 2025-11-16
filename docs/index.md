@@ -1,6 +1,6 @@
-# Highway Circuit Breaker Documentation
+# Resilient Circuit Documentation
 
-Welcome to the Highway Circuit Breaker documentation. This library is part of the Highway Workflow Engine, a comprehensive solution for building resilient and fault-tolerant applications.
+Welcome to the Resilient Circuit documentation. This library is part of the Highway Workflow Engine, a comprehensive solution for building resilient and fault-tolerant applications.
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -14,9 +14,9 @@ Welcome to the Highway Circuit Breaker documentation. This library is part of th
 
 ## Introduction
 
-Highway Circuit Breaker is a Python library that implements resilience patterns to help your applications gracefully handle failures in distributed systems. It provides implementations of the Circuit Protector and Retry patterns, which are essential for building fault-tolerant services.
+Resilient Circuit is a Python library that implements resilience patterns to help your applications gracefully handle failures in distributed systems. It provides implementations of the Circuit Protector and Retry patterns, which are essential for building fault-tolerant services.
 
-### Why Use Highway Circuit Breaker?
+### Why Use Resilient Circuit?
 
 - **Prevents Cascading Failures**: Stop failures from spreading through your system
 - **Improves User Experience**: Handle temporary outages gracefully
@@ -27,7 +27,7 @@ Highway Circuit Breaker is a Python library that implements resilience patterns 
 ## Installation
 
 ```bash
-pip install highway_circutbreaker
+pip install resilient_circuit
 ```
 
 ## Core Concepts
@@ -50,7 +50,7 @@ Retries are useful for handling temporary failures by attempting an operation mu
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 # Create a circuit protector
 protector = CircuitProtectorPolicy(
@@ -86,7 +86,7 @@ def external_service_call():
 ### Basic Usage
 
 ```python
-from highway_circutbreaker import RetryWithBackoffPolicy
+from resilient_circuit import RetryWithBackoffPolicy
 
 retry_policy = RetryWithBackoffPolicy(max_retries=3)
 
@@ -100,7 +100,7 @@ def flaky_operation():
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
 backoff = ExponentialDelay(
     min_delay=timedelta(seconds=1),
@@ -125,7 +125,7 @@ def operation_with_backoff():
 The SafetyNet pattern combines multiple policies:
 
 ```python
-from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
+from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
 safety_net = SafetyNet(
     policies=(
@@ -183,14 +183,14 @@ print(f"Recent successes/failures: {list(protector.execution_log)}")
 
 ## Integration with Highway Workflow Engine
 
-Highway Circuit Breaker is designed as a core component of the Highway Workflow Engine, providing resilience capabilities for workflow orchestration. The Highway Workflow Engine is a distributed workflow management system that leverages Highway Circuit Breaker to:
+Resilient Circuit is designed as a core component of the Highway Workflow Engine, providing resilience capabilities for workflow orchestration. The Highway Workflow Engine is a distributed workflow management system that leverages Resilient Circuit to:
 
 - Automatically handle failures in workflow steps
 - Provide graceful degradation when external services are unavailable
 - Maintain system reliability under partial failure conditions
 - Enable rapid recovery through circuit protector's status management
 
-When used together, the Highway Workflow Engine and Highway Circuit Breaker provide a comprehensive solution for building robust, distributed applications that can withstand network failures, service outages, and other common distributed system challenges.
+When used together, the Highway Workflow Engine and Resilient Circuit provide a comprehensive solution for building robust, distributed applications that can withstand network failures, service outages, and other common distributed system challenges.
 
 ## Best Practices
 

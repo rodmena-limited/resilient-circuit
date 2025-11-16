@@ -1,6 +1,6 @@
-# Contributing to Highway Circuit Breaker
+# Contributing to Resilient Circuit
 
-Thank you for your interest in contributing to Highway Circuit Breaker! This document provides guidelines and information about contributing to the project.
+Thank you for your interest in contributing to Resilient Circuit! This document provides guidelines and information about contributing to the project.
 
 ## Table of Contents
 1. [Getting Started](#getting-started)
@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Highway Circuit Breaker! This doc
 
 ## Getting Started
 
-Highway Circuit Breaker is part of the Highway Workflow Engine ecosystem and follows established patterns for Python library development. Before contributing:
+Resilient Circuit is part of the Highway Workflow Engine ecosystem and follows established patterns for Python library development. Before contributing:
 
 1. Fork the repository on GitHub
 2. Clone your fork locally
@@ -32,8 +32,8 @@ Highway Circuit Breaker is part of the Highway Workflow Engine ecosystem and fol
 
 1. Clone your fork:
 ```bash
-git clone https://github.com/YOUR_USERNAME/highway_circutbreaker.git
-cd highway_circutbreaker
+git clone https://github.com/YOUR_USERNAME/resilient_circuit.git
+cd resilient_circuit
 ```
 
 2. Create a virtual environment:
@@ -57,7 +57,7 @@ python -m pytest
 
 ## Code Style
 
-Highway Circuit Breaker follows established Python community standards:
+Resilient Circuit follows established Python community standards:
 
 ### Formatting
 
@@ -99,7 +99,7 @@ Tests are located in the `tests/` directory and follow pytest conventions.
 python -m pytest
 
 # Run with coverage
-python -m pytest --cov=highway_circutbreaker
+python -m pytest --cov=resilient_circuit
 
 # Run specific test file
 python -m pytest tests/test_specific.py
@@ -223,4 +223,4 @@ If you have questions about contributing, feel free to:
 - Check the existing documentation
 - Look for similar patterns in the existing codebase
 
-Thank you for your contribution to Highway Circuit Breaker!
+Thank you for your contribution to Resilient Circuit!

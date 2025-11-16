@@ -1,6 +1,6 @@
-# Highway Circuit Breaker - API Reference
+# Resilient Circuit - API Reference
 
-This document provides a comprehensive reference for the Highway Circuit Breaker API.
+This document provides a comprehensive reference for the Resilient Circuit API.
 
 ## Classes
 
@@ -11,7 +11,7 @@ Implements the circuit breaker pattern to prevent cascading failures in distribu
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 CircuitProtectorPolicy(
     cooldown: timedelta = timedelta(0),
@@ -45,7 +45,7 @@ Implements the retry pattern to automatically retry failed operations.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
 RetryWithBackoffPolicy(
     backoff: Optional[ExponentialDelay] = None,
@@ -65,7 +65,7 @@ RetryWithBackoffPolicy(
 Combines multiple policies to provide comprehensive error handling.
 
 ```python
-from highway_circutbreaker import SafetyNet
+from resilient_circuit import SafetyNet
 
 SafetyNet(policies: tuple)
 ```
@@ -80,7 +80,7 @@ Base class for implementing backoff strategies between retries.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import ExponentialDelay
+from resilient_circuit import ExponentialDelay
 
 ExponentialDelay(
     min_delay: timedelta,
@@ -111,7 +111,7 @@ A subclass of `ExponentialDelay` that implements constant delay between retries.
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import FixedDelay
+from resilient_circuit import FixedDelay
 
 FixedDelay(delay: timedelta)
 ```
@@ -147,7 +147,7 @@ Raised when the maximum number of retries is exceeded in a `RetryWithBackoffPoli
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
+from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
 def on_status_change(policy, old_status, new_status):
     print(f"Status changed from {old_status.name} to {new_status.name}")
@@ -169,7 +169,7 @@ def service_call():
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
 exponential_backoff = ExponentialDelay(
     min_delay=timedelta(milliseconds=100),
@@ -192,7 +192,7 @@ def unreliable_operation():
 ### SafetyNet with Multiple Policies
 
 ```python
-from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
+from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
 
 safety_net = SafetyNet(
     policies=(

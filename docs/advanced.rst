@@ -4,7 +4,7 @@ Advanced Usage
 PostgreSQL Shared Storage
 -------------------------
 
-For distributed applications, Highway Circuit Breaker supports PostgreSQL as a shared storage backend. This allows circuit breaker state to be synchronized across all instances of your application.
+For distributed applications, Resilient Circuit supports PostgreSQL as a shared storage backend. This allows circuit breaker state to be synchronized across all instances of your application.
 
 Configuration
 ~~~~~~~~~~~~~
@@ -13,23 +13,23 @@ First, install with PostgreSQL support:
 
 .. code-block:: bash
 
-   pip install highway-circutbreaker[postgres]
+   pip install resilient-circuit[postgres]
 
 Create a ``.env`` file in your project root:
 
 .. code-block:: ini
 
-   HW_DB_HOST=localhost
-   HW_DB_PORT=5432
-   HW_DB_NAME=highway_circutbreaker_db
-   HW_DB_USER=postgres
-   HW_DB_PASSWORD=your_password
+   RC_DB_HOST=localhost
+   RC_DB_PORT=5432
+   RC_DB_NAME=resilient_circuit_db
+   RC_DB_USER=postgres
+   RC_DB_PASSWORD=your_password
 
 Set up the database table using the CLI:
 
 .. code-block:: bash
 
-   highway-circutbreaker-cli pg-setup
+   resilient-circuit-cli pg-setup
 
 Once configured, the circuit breaker will automatically use PostgreSQL storage when environment variables are present:
 
@@ -37,9 +37,9 @@ Once configured, the circuit breaker will automatically use PostgreSQL storage w
 
    from datetime import timedelta
    from fractions import Fraction
-   from highway_circutbreaker import CircuitProtectorPolicy
+   from resilient_circuit import CircuitProtectorPolicy
 
-   # This will automatically use PostgreSQL if HW_DB_* env vars are set
+   # This will automatically use PostgreSQL if RC_DB_* env vars are set
    circuit_breaker = CircuitProtectorPolicy(
        resource_key="payment_service",
        cooldown=timedelta(seconds=60),
