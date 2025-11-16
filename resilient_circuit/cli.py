@@ -29,18 +29,18 @@ def load_env_vars():
 def get_db_config_from_env() -> dict:
     """Get database configuration from environment variables."""
     return {
-        'host': os.getenv('HW_DB_HOST', 'localhost'),
-        'port': int(os.getenv('HW_DB_PORT', '5432')),
-        'dbname': os.getenv('HW_DB_NAME', 'highway_circutbreaker_db'),
-        'user': os.getenv('HW_DB_USER', 'postgres'),
-        'password': os.getenv('HW_DB_PASSWORD', 'postgres')
+        'host': os.getenv('RC_DB_HOST', 'localhost'),
+        'port': int(os.getenv('RC_DB_PORT', '5432')),
+        'dbname': os.getenv('RC_DB_NAME', 'resilient_circuit_db'),
+        'user': os.getenv('RC_DB_USER', 'postgres'),
+        'password': os.getenv('RC_DB_PASSWORD', 'postgres')
     }
 
 
 def create_postgres_table(config: dict) -> bool:
     """Create the circuit breaker table in PostgreSQL database."""
     if not psycopg:
-        print("Error: psycopg is required for PostgreSQL setup. Install with: pip install highway_circutbreaker[postgres]")
+        print("Error: psycopg is required for PostgreSQL setup. Install with: pip install resilient_circuit[postgres]")
         return False
 
     try:
@@ -60,17 +60,17 @@ def create_postgres_table(config: dict) -> bool:
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables
                         WHERE table_schema = 'public'
-                        AND table_name = 'hw_circuit_breakers'
+                        AND table_name = 'rc_circuit_breakers'
                     );
                 """)
 
                 table_exists = cur.fetchone()[0]
                 if table_exists:
-                    print(f"ℹ️  Table 'hw_circuit_breakers' already exists, checking for updates...")
+                    print(f"ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates...")
 
                 # Create the circuit breaker table
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS hw_circuit_breakers (
+                    CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
                         resource_key VARCHAR(255) NOT NULL,
                         state VARCHAR(20) NOT NULL CHECK (state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
                         failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0 AND failure_count <= 2147483647),
@@ -83,29 +83,29 @@ def create_postgres_table(config: dict) -> bool:
 
                 # Create optimized indexes
                 cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_hw_circuit_breakers_state
-                    ON hw_circuit_breakers (state);
+                    CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_state
+                    ON rc_circuit_breakers (state);
                 """)
 
                 cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_hw_circuit_breakers_open_until
-                    ON hw_circuit_breakers (open_until)
+                    CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_open_until
+                    ON rc_circuit_breakers (open_until)
                     WHERE open_until IS NOT NULL;
                 """)
 
                 cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_hw_circuit_breakers_key_state
-                    ON hw_circuit_breakers (resource_key, state);
+                    CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_key_state
+                    ON rc_circuit_breakers (resource_key, state);
                 """)
 
                 cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_hw_circuit_breakers_state_updated
-                    ON hw_circuit_breakers (state, updated_at DESC);
+                    CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_state_updated
+                    ON rc_circuit_breakers (state, updated_at DESC);
                 """)
 
                 # Create trigger function
                 cur.execute("""
-                    CREATE OR REPLACE FUNCTION update_hw_circuit_breakers_updated_at_column()
+                    CREATE OR REPLACE FUNCTION update_rc_circuit_breakers_updated_at_column()
                     RETURNS TRIGGER AS $$
                     BEGIN
                         NEW.updated_at = NOW();
@@ -116,36 +116,36 @@ def create_postgres_table(config: dict) -> bool:
 
                 # Create trigger
                 cur.execute("""
-                    DROP TRIGGER IF EXISTS update_hw_circuit_breakers_updated_at
-                    ON hw_circuit_breakers;
+                    DROP TRIGGER IF EXISTS update_rc_circuit_breakers_updated_at
+                    ON rc_circuit_breakers;
                 """)
 
                 cur.execute("""
-                    CREATE TRIGGER update_hw_circuit_breakers_updated_at
-                        BEFORE UPDATE ON hw_circuit_breakers
+                    CREATE TRIGGER update_rc_circuit_breakers_updated_at
+                        BEFORE UPDATE ON rc_circuit_breakers
                         FOR EACH ROW
                         WHEN (OLD IS DISTINCT FROM NEW)
-                        EXECUTE FUNCTION update_hw_circuit_breakers_updated_at_column();
+                        EXECUTE FUNCTION update_rc_circuit_breakers_updated_at_column();
                 """)
 
                 # Add table comments
                 cur.execute("""
-                    COMMENT ON TABLE hw_circuit_breakers IS
+                    COMMENT ON TABLE rc_circuit_breakers IS
                     'Circuit breaker state storage with performance optimizations';
                 """)
 
                 cur.execute("""
-                    COMMENT ON COLUMN hw_circuit_breakers.state IS
+                    COMMENT ON COLUMN rc_circuit_breakers.state IS
                     'Current state of the circuit breaker: CLOSED, OPEN, or HALF_OPEN';
                 """)
 
                 cur.execute("""
-                    COMMENT ON COLUMN hw_circuit_breakers.open_until IS
+                    COMMENT ON COLUMN rc_circuit_breakers.open_until IS
                     'Timestamp when the circuit breaker should transition from OPEN to HALF_OPEN';
                 """)
 
                 cur.execute("""
-                    COMMENT ON COLUMN hw_circuit_breakers.failure_count IS
+                    COMMENT ON COLUMN rc_circuit_breakers.failure_count IS
                     'Number of consecutive failures since last reset';
                 """)
 
@@ -160,7 +160,7 @@ def create_postgres_table(config: dict) -> bool:
     except psycopg.OperationalError as e:
         if "database" in str(e) and "does not exist" in str(e):
             print(f"❌ Error: Database '{config['dbname']}' does not exist.")
-            print("💡 Please create the database first or update your HW_DB_NAME in the .env file.")
+            print("💡 Please create the database first or update your RC_DB_NAME in the .env file.")
             print(f"   You can create it with: createdb -h {config['host']} -p {config['port']} -U {config['user']} {config['dbname']}")
         else:
             print(f"❌ Database connection error: {e}")
@@ -186,9 +186,9 @@ def run_pg_setup(args: argparse.Namespace) -> int:
     print(f"   Database: {config['dbname']}")
     print(f"   User: {config['user']}")
 
-    if config['dbname'] == 'highway_circutbreaker_db':
+    if config['dbname'] == 'resilient_circuit_db':
         print(f"\n⚠️  Note: Using default database name '{config['dbname']}'.")
-        print("   You can customize this by setting HW_DB_NAME in your .env file.")
+        print("   You can customize this by setting RC_DB_NAME in your .env file.")
 
     if args.dry_run:
         print("\n📝 DRY RUN MODE - No changes will be made to the database")
@@ -208,14 +208,14 @@ def run_pg_setup(args: argparse.Namespace) -> int:
     if success:
         print("\n✅ PostgreSQL setup completed successfully!")
         print("\n📋 The following have been created/updated:")
-        print("   - Table: hw_circuit_breakers")
-        print("   - Primary key index: hw_circuit_breakers_pkey")
-        print("   - Index: idx_hw_circuit_breakers_state")
-        print("   - Index: idx_hw_circuit_breakers_open_until")
-        print("   - Index: idx_hw_circuit_breakers_key_state")
-        print("   - Index: idx_hw_circuit_breakers_state_updated")
-        print("   - Trigger: update_hw_circuit_breakers_updated_at")
-        print("   - Function: update_hw_circuit_breakers_updated_at_column")
+        print("   - Table: rc_circuit_breakers")
+        print("   - Primary key index: rc_circuit_breakers_pkey")
+        print("   - Index: idx_rc_circuit_breakers_state")
+        print("   - Index: idx_rc_circuit_breakers_open_until")
+        print("   - Index: idx_rc_circuit_breakers_key_state")
+        print("   - Index: idx_rc_circuit_breakers_state_updated")
+        print("   - Trigger: update_rc_circuit_breakers_updated_at")
+        print("   - Function: update_rc_circuit_breakers_updated_at_column")
 
         print(f"\n💡 The database '{config['dbname']}' is now ready for use with Highway Circuit Breaker!")
         return 0

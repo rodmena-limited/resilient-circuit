@@ -3,16 +3,16 @@ from unittest.mock import Mock
 
 import pytest
 
-from highway_circutbreaker.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
-from highway_circutbreaker.exceptions import ProtectedCallError, RetryLimitReached
-from highway_circutbreaker.failsafe import SafetyNet
-from highway_circutbreaker.retry import RetryWithBackoffPolicy
+from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
+from resilient_circuit.exceptions import ProtectedCallError, RetryLimitReached
+from resilient_circuit.failsafe import SafetyNet
+from resilient_circuit.retry import RetryWithBackoffPolicy
 
 
 class TestSafetyNet:
     @pytest.fixture
     def protector(self):
-        yield CircuitProtectorPolicy(cooldown=timedelta(milliseconds=10))
+        yield CircuitProtectorPolicy(cooldown=timedelta(seconds=1))
 
     @pytest.fixture
     def backoff_retries(self):

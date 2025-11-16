@@ -2,7 +2,7 @@ from typing import Callable, Sequence, TypeVar
 
 from typing_extensions import ParamSpec
 
-from highway_circutbreaker.policy import ProtectionPolicy
+from resilient_circuit.policy import ProtectionPolicy
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -14,7 +14,7 @@ class SafetyNet:
     SafetyNet will handle execution results in reverse, with last policy applied first.
 
     Example:
-        >>> from highway_circutbreaker import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
+        >>> from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtectorPolicy
         >>>
         >>> @SafetyNet(policies=(RetryWithBackoffPolicy(), CircuitProtectorPolicy()))
         >>> def some_method() -> bool:

@@ -3,9 +3,9 @@ requires = ["setuptools>=64.0.0", "wheel", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "highway_circutbreaker"
+name = "resilient-circuit"
 version = "0.3.0"
-description = "A circuit breaker and retry library for handling failures in Python applications"
+description = "A resilient circuit breaker and retry library with PostgreSQL support for distributed systems"
 readme = "README.md"
 license = {text = "Apache Software License 2.0"}
 authors = [
@@ -16,13 +16,13 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
 ]
 requires-python = ">=3.9"
 dependencies = [
@@ -44,18 +44,18 @@ postgres = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rodmena-limited/highway_circutbreaker"
-Repository = "https://github.com/rodmena-limited/highway_circutbreaker"
-Documentation = "https://highway-circutbreaker.readthedocs.io"
+Homepage = "https://github.com/rodmena-limited/resilient-circuit"
+Repository = "https://github.com/rodmena-limited/resilient-circuit"
+Documentation = "https://resilient-circuit.readthedocs.io"
 
 [project.scripts]
-highway-circutbreaker-cli = "highway_circutbreaker.cli:main"
+resilient-circuit = "resilient_circuit.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["highway_circutbreaker*"]
+include = ["resilient_circuit*"]
 
 [tool.setuptools.package-data]
-highway_circutbreaker = ["py.typed"]
+resilient_circuit = ["py.typed"]
 
 [tool.black]
 line-length = 88

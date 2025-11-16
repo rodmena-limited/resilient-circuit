@@ -6,8 +6,8 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from highway_circutbreaker.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
-from highway_circutbreaker.exceptions import ProtectedCallError
+from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
+from resilient_circuit.exceptions import ProtectedCallError
 
 
 class TestCircuitProtector:

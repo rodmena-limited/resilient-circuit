@@ -77,7 +77,7 @@ class PostgresStorage(CircuitBreakerStorage):
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        CREATE TABLE IF NOT EXISTS hw_circuit_breakers (
+                        CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
                             resource_key VARCHAR(255) PRIMARY KEY,
                             state VARCHAR(50) NOT NULL,
                             failure_count INTEGER NOT NULL DEFAULT 0,
@@ -89,8 +89,8 @@ class PostgresStorage(CircuitBreakerStorage):
                     
                     # Create index for better performance
                     cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_hw_circuit_breakers_state 
-                        ON hw_circuit_breakers(state)
+                        CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_state 
+                        ON rc_circuit_breakers(state)
                     """)
                     
                     conn.commit()
@@ -110,7 +110,7 @@ class PostgresStorage(CircuitBreakerStorage):
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT state, failure_count, open_until "
-                        "FROM hw_circuit_breakers WHERE resource_key = %s "
+                        "FROM rc_circuit_breakers WHERE resource_key = %s "
                         "FOR UPDATE",
                         (resource_key,)
                     )
@@ -138,7 +138,7 @@ class PostgresStorage(CircuitBreakerStorage):
                     
                     cur.execute(
                         """
-                        INSERT INTO hw_circuit_breakers 
+                        INSERT INTO rc_circuit_breakers 
                             (resource_key, state, failure_count, open_until)
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT (resource_key) DO UPDATE SET
@@ -158,11 +158,11 @@ class PostgresStorage(CircuitBreakerStorage):
 def create_storage() -> CircuitBreakerStorage:
     """Create the appropriate storage backend based on environment."""
     # Check for PostgreSQL connection info in environment
-    db_host = os.getenv("HW_DB_HOST")
-    db_port = os.getenv("HW_DB_PORT", "5432")
-    db_name = os.getenv("HW_DB_NAME", "highway_circutbreaker_db")
-    db_user = os.getenv("HW_DB_USER", "postgres")
-    db_password = os.getenv("HW_DB_PASSWORD")
+    db_host = os.getenv("RC_DB_HOST")
+    db_port = os.getenv("RC_DB_PORT", "5432")
+    db_name = os.getenv("RC_DB_NAME", "resilient_circuit_db")
+    db_user = os.getenv("RC_DB_USER", "postgres")
+    db_password = os.getenv("RC_DB_PASSWORD")
     
     if db_host and db_password:
         # PostgreSQL storage requested

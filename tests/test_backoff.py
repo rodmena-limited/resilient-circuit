@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from highway_circutbreaker.backoff import ExponentialDelay, FixedDelay
+from resilient_circuit.backoff import ExponentialDelay, FixedDelay
 
 
 class TestExponentialDelay:

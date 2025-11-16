@@ -3,10 +3,10 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from highway_circutbreaker import retry as retry_module
-from highway_circutbreaker.backoff import FixedDelay
-from highway_circutbreaker.exceptions import RetryLimitReached
-from highway_circutbreaker.retry import RetryWithBackoffPolicy
+from resilient_circuit import retry as retry_module
+from resilient_circuit.backoff import FixedDelay
+from resilient_circuit.exceptions import RetryLimitReached
+from resilient_circuit.retry import RetryWithBackoffPolicy
 
 
 class TestRetryWithBackoffPolicy:

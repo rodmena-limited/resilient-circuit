@@ -8,10 +8,10 @@ from typing import Callable, Optional, TypeVar
 
 from typing_extensions import ParamSpec
 
-from highway_circutbreaker.buffer import BinaryCircularBuffer
-from highway_circutbreaker.exceptions import ProtectedCallError
-from highway_circutbreaker.policy import ProtectionPolicy
-from highway_circutbreaker.storage import CircuitBreakerStorage, InMemoryStorage, create_storage
+from resilient_circuit.buffer import BinaryCircularBuffer
+from resilient_circuit.exceptions import ProtectedCallError
+from resilient_circuit.policy import ProtectionPolicy
+from resilient_circuit.storage import CircuitBreakerStorage, InMemoryStorage, create_storage
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -90,7 +90,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             state_data = {
                 "state": self._status.status_type.value,
                 "failure_count": getattr(self._status, 'failure_count', 0),
-                "open_until": getattr(self._status, 'open_until', 0)
+                # For StatusOpen, use open_until_timestamp; for others, default to 0
+                "open_until": getattr(self._status, 'open_until_timestamp', 0) if hasattr(self._status, 'open_until_timestamp') else 0
             }
 
             self.storage.set_state(

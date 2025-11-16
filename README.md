@@ -1,11 +1,11 @@
-# Highway Circuit Breaker
+# Resilient Circuit
 
 <div align="center">
 
-[![PyPI version](https://badge.fury.io/py/highway-circutbreaker.svg)](https://badge.fury.io/py/highway-circutbreaker)
+[![PyPI version](https://badge.fury.io/py/resilient-circuit.svg)](https://badge.fury.io/py/resilient-circuit)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/highway-circutbreaker.svg)](https://pypi.org/project/highway-circutbreaker/)
-[![Documentation Status](https://readthedocs.org/projects/highway-circutbreaker/badge/?version=latest)](https://highway-circutbreaker.readthedocs.io/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/resilient-circuit.svg)](https://pypi.org/project/resilient-circuit/)
+[![Documentation Status](https://readthedocs.org/projects/resilient-circuit/badge/?version=latest)](https://resilient-circuit.readthedocs.io/)
 
 **Part of the Highway Workflow Engine** - A robust resilience library for Python applications
 </div>
@@ -14,16 +14,16 @@
 
 ## Overview
 
-Highway Circuit Breaker is a powerful resilience library designed to make your Python applications fault-tolerant and highly available. It's an integral component of the Highway Workflow Engine, providing essential failure handling capabilities for modern distributed systems.
+Resilient Circuit is a powerful resilience library designed to make your Python applications fault-tolerant and highly available. It's an integral component of the Highway Workflow Engine, providing essential failure handling capabilities for modern distributed systems.
 
 This library implements the Circuit Breaker and Retry patterns, offering elegant solutions for handling failures in networked systems, external service calls, and unreliable dependencies.
 
-For comprehensive documentation, visit our [Read the Docs page](https://highway-circutbreaker.readthedocs.io/).
+For comprehensive documentation, visit our [Read the Docs page](https://resilient-circuit.readthedocs.io/).
 
 ## Installation
 
 ```bash
-pip install highway_circutbreaker
+pip install resilient_circuit
 ```
 
 ### PostgreSQL Storage Support (Optional)
@@ -31,7 +31,7 @@ pip install highway_circutbreaker
 For shared state across multiple instances, you can use PostgreSQL as the storage backend:
 
 ```bash
-pip install highway_circutbreaker[postgres]
+pip install resilient_circuit[postgres]
 ```
 
 Or install the dependencies separately:
@@ -57,7 +57,7 @@ pip install psycopg[binary] python-dotenv
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 # Create a circuit protector that trips after 3 failures
 protector = CircuitProtectorPolicy(
@@ -78,7 +78,7 @@ def unreliable_service_call():
 
 ```python
 from datetime import timedelta
-from highway_circutbreaker import RetryWithBackoffPolicy, ExponentialDelay
+from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 
 # Create an exponential backoff strategy
 backoff = ExponentialDelay(
@@ -106,7 +106,7 @@ def unreliable_database_operation():
 ### Combining Circuit Protector and Retry
 
 ```python
-from highway_circutbreaker import SafetyNet, CircuitProtectorPolicy, RetryWithBackoffPolicy
+from resilient_circuit import SafetyNet, CircuitProtectorPolicy, RetryWithBackoffPolicy
 
 # Combine both patterns using SafetyNet
 safety_net = SafetyNet(
@@ -131,7 +131,7 @@ def resilient_external_api_call():
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy, CircuitState
+from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
 def custom_exception_handler(exc):
     """Only handle specific exceptions"""
@@ -159,7 +159,7 @@ def monitored_service_call():
 ### Complex Retry Scenarios
 
 ```python
-from highway_circutbreaker import RetryWithBackoffPolicy, FixedDelay
+from resilient_circuit import RetryWithBackoffPolicy, FixedDelay
 
 # Constant delay between retries
 constant_backoff = FixedDelay(delay=timedelta(seconds=2))
@@ -179,7 +179,7 @@ def service_with_constant_retry():
 ### Accessing Circuit Protector Status
 
 ```python
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
 protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
 
@@ -200,14 +200,14 @@ else:
 
 ## PostgreSQL Shared Storage
 
-For distributed applications running across multiple instances, Highway Circuit Breaker supports PostgreSQL as a shared storage backend. This allows circuit breaker state to be synchronized across all instances of your application.
+For distributed applications running across multiple instances, Resilient Circuit supports PostgreSQL as a shared storage backend. This allows circuit breaker state to be synchronized across all instances of your application.
 
 ### Setting Up PostgreSQL Storage
 
 1. **Install PostgreSQL dependencies:**
 
 ```bash
-pip install highway_circutbreaker[postgres]
+pip install resilient_circuit[postgres]
 ```
 
 2. **Create the database:**
@@ -215,12 +215,12 @@ pip install highway_circutbreaker[postgres]
 You need to create the database first (the CLI assumes the database exists). Create it using your preferred method:
 
 ```bash
-createdb -h localhost -p 5432 -U postgres highway_circutbreaker_db
+createdb -h localhost -p 5432 -U postgres resilient_circuit_db
 ```
 
 Or using psql:
 ```sql
-CREATE DATABASE highway_circutbreaker_db;
+CREATE DATABASE resilient_circuit_db;
 ```
 
 3. **Configure environment variables:**
@@ -228,17 +228,17 @@ CREATE DATABASE highway_circutbreaker_db;
 Create a `.env` file in your project root:
 
 ```env
-HW_DB_HOST=localhost
-HW_DB_PORT=5432
-HW_DB_NAME=highway_circutbreaker_db
-HW_DB_USER=postgres
-HW_DB_PASSWORD=your_password
+RC_DB_HOST=localhost
+RC_DB_PORT=5432
+RC_DB_NAME=resilient_circuit_db
+RC_DB_USER=postgres
+RC_DB_PASSWORD=your_password
 ```
 
 4. **Use the CLI to set up the table:**
 
 ```bash
-highway-circutbreaker-cli pg-setup
+resilient-circuit-cli pg-setup
 ```
 
 This command will read the database configuration from your environment variables and create the necessary table and indexes.
@@ -249,8 +249,8 @@ You can also use additional options:
 
 Example:
 ```bash
-highway-circutbreaker-cli pg-setup --yes  # Skip confirmation
-highway-circutbreaker-cli pg-setup --dry-run  # Show what would be done
+resilient-circuit-cli pg-setup --yes  # Skip confirmation
+resilient-circuit-cli pg-setup --dry-run  # Show what would be done
 ```
 
 ### Using PostgreSQL Storage
@@ -260,9 +260,9 @@ Once configured, the circuit breaker will automatically use PostgreSQL storage w
 ```python
 from datetime import timedelta
 from fractions import Fraction
-from highway_circutbreaker import CircuitProtectorPolicy
+from resilient_circuit import CircuitProtectorPolicy
 
-# This will automatically use PostgreSQL if HW_DB_* env vars are set
+# This will automatically use PostgreSQL if RC_DB_* env vars are set
 circuit_breaker = CircuitProtectorPolicy(
     resource_key="payment_service",
     cooldown=timedelta(seconds=60),
@@ -291,17 +291,17 @@ Query the database to monitor circuit breaker status:
 ```sql
 -- View all circuit breakers and their status
 SELECT resource_key, state, failure_count, open_until, updated_at
-FROM hw_circuit_breakers
+FROM rc_circuit_breakers
 ORDER BY updated_at DESC;
 
 -- Find all open circuit breakers
 SELECT resource_key, open_until
-FROM hw_circuit_breakers
+FROM rc_circuit_breakers
 WHERE state = 'OPEN';
 
 -- Check failure rates for specific services
 SELECT resource_key, failure_count
-FROM hw_circuit_breakers
+FROM rc_circuit_breakers
 WHERE state = 'CLOSED';
 ```
 
@@ -314,7 +314,7 @@ If PostgreSQL is not configured or unavailable, the circuit breaker automaticall
 circuit_breaker = CircuitProtectorPolicy(resource_key="my_service")
 
 # Or explicitly specify in-memory storage
-from highway_circutbreaker.storage import InMemoryStorage
+from resilient_circuit.storage import InMemoryStorage
 
 circuit_breaker = CircuitProtectorPolicy(
     resource_key="my_service",
@@ -326,15 +326,15 @@ circuit_breaker = CircuitProtectorPolicy(
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HW_DB_HOST` | PostgreSQL host | Required |
-| `HW_DB_PORT` | PostgreSQL port | `5432` |
-| `HW_DB_NAME` | Database name | `highway_circutbreaker_db` |
-| `HW_DB_USER` | Database user | `postgres` |
-| `HW_DB_PASSWORD` | Database password | Required |
+| `RC_DB_HOST` | PostgreSQL host | Required |
+| `RC_DB_PORT` | PostgreSQL port | `5432` |
+| `RC_DB_NAME` | Database name | `resilient_circuit_db` |
+| `RC_DB_USER` | Database user | `postgres` |
+| `RC_DB_PASSWORD` | Database password | Required |
 
 ## Highway Workflow Engine Integration
 
-Highway Circuit Breaker is a core component of the Highway Workflow Engine, designed for building resilient, distributed applications. The Highway Workflow Engine provides:
+Resilient Circuit is a core component of the Highway Workflow Engine, designed for building resilient, distributed applications. The Highway Workflow Engine provides:
 
 - **Workflow Orchestration**: Define complex business processes
 - **Task Management**: Execute and monitor long-running tasks
@@ -387,7 +387,7 @@ Combines multiple policies for comprehensive error handling.
 
 ## Contributing
 
-We welcome contributions to Highway Circuit Breaker! See our [contributing guide](CONTRIBUTING.md) for details.
+We welcome contributions to Resilient Circuit! See our [contributing guide](CONTRIBUTING.md) for details.
 
 ## License
 

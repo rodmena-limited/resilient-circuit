@@ -2,7 +2,7 @@ from fractions import Fraction
 
 import pytest
 
-from highway_circutbreaker.buffer import BinaryCircularBuffer, GenericCircularBuffer
+from resilient_circuit.buffer import BinaryCircularBuffer, GenericCircularBuffer
 
 
 class TestGenericCircularBuffer:

@@ -4,9 +4,9 @@ from typing import Callable, Optional, TypeVar
 
 from typing_extensions import ParamSpec
 
-from highway_circutbreaker.backoff import ExponentialDelay
-from highway_circutbreaker.exceptions import ProtectedCallError, RetryLimitReached
-from highway_circutbreaker.policy import ProtectionPolicy
+from resilient_circuit.backoff import ExponentialDelay
+from resilient_circuit.exceptions import ProtectedCallError, RetryLimitReached
+from resilient_circuit.policy import ProtectionPolicy
 
 R = TypeVar("R")
 P = ParamSpec("P")
