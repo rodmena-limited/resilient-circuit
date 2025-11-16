@@ -11,6 +11,7 @@ build:
 
 # Build documentation with Sphinx
 sphinx:
+  builder: html
   configuration: docs/conf.py
   fail_on_warning: false
 
@@ -24,6 +25,4 @@ python:
   install:
     - method: pip
       path: .
-      extra_requirements:
-        - dev
-        - postgres
+    - requirements: docs/requirements.txt
