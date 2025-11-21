@@ -16,10 +16,12 @@ from resilient_circuit.storage import (
 class TestStorageBackendSelection:
     """Test that the correct storage backend is selected based on environment."""
 
-    def test_should_use_postgres_storage_when_env_vars_present(self):
+    def test_should_use_postgres_storage_when_env_vars_present(self, monkeypatch):
         """When PostgreSQL env vars are set, should use PostgresStorage."""
-        # Ensure env vars are present
-        assert os.getenv("RC_DB_HOST") is not None, "RC_DB_HOST should be set in .env"
+        # Set PostgreSQL env vars for this test
+        monkeypatch.setenv("RC_DB_HOST", "localhost")
+        monkeypatch.setenv("RC_DB_PASSWORD", "postgres")
+        monkeypatch.setenv("RC_DB_NAME", "resilient_circuit_db")
 
         storage = create_storage()
 

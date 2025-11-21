@@ -44,9 +44,13 @@ class TestRetryWithBackoffPolicy:
 
         assert method.call_count == 3
 
-    def test_should_retry_with_delays_between_calls(self, mocker):
+    def test_should_retry_with_delays_between_calls(self, monkeypatch):
         # given
-        mocked_sleep = mocker.patch.object(retry_module, "sleep")
+        sleep_calls = []
+        def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr(retry_module, "sleep", mock_sleep)
         backoff_retries = RetryWithBackoffPolicy(backoff=FixedDelay(timedelta(seconds=1)))
         method = Mock(side_effect=[RuntimeError, RuntimeError, "test"])
 
@@ -54,7 +58,7 @@ class TestRetryWithBackoffPolicy:
         backoff_retries(method)()
 
         # then
-        mocked_sleep.assert_has_calls([call(1.0), call(1.0)])
+        assert sleep_calls == [1.0, 1.0]
 
     def test_should_retry_when_exception_must_be_handled(self):
         # given

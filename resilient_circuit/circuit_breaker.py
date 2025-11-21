@@ -33,6 +33,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         *,
         resource_key: Optional[str] = None,
         storage: Optional[CircuitBreakerStorage] = None,
+        namespace: Optional[str] = None,
         cooldown: timedelta = timedelta(0),
         failure_limit: Fraction = DEFAULT_THRESHOLD,
         success_limit: Fraction = DEFAULT_THRESHOLD,
@@ -43,7 +44,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     ) -> None:
         # Generate a default resource key if not provided for backward compatibility
         self.resource_key = resource_key or f"anonymous_{id(self)}"
-        self.storage = storage or create_storage()
+        # Create storage with namespace support if not provided
+        self.storage = storage or create_storage(namespace=namespace)
         self.cooldown = cooldown
         self.success_limit = success_limit
         self.failure_limit = failure_limit
@@ -60,20 +62,22 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             if state_data:
                 # Restore state from storage
                 state = CircuitStatus(state_data["state"])
-                failure_count = state_data.get("failure_count", 0)
-                open_until = state_data.get("open_until", 0)
+                failure_count = int(state_data.get("failure_count", 0))
+                open_until = float(state_data.get("open_until", 0))
 
                 # Initialize status based on stored state
+                status: CircuitStatusBase
                 if state == CircuitStatus.CLOSED:
-                    self._status = StatusClosed(policy=self, failure_count=failure_count)
+                    status = StatusClosed(policy=self, failure_count=failure_count)
                 elif state == CircuitStatus.OPEN:
                     # For OPEN state, we need a previous status to pass to the constructor
                     # We'll use a temporary closed status with same failure count
                     temp_status = StatusClosed(policy=self, failure_count=failure_count)
-                    self._status = StatusOpen(policy=self, previous_status=temp_status, open_until=open_until)
+                    status = StatusOpen(policy=self, previous_status=temp_status, open_until=open_until)
                 else:  # HALF_OPEN
-                    self._status = StatusHalfOpen(policy=self, failure_count=failure_count)
+                    status = StatusHalfOpen(policy=self, failure_count=failure_count)
 
+                self._status = status
                 logger.debug(f"Loaded circuit breaker state for {self.resource_key}: {state.value}")
             else:
                 # No state found, start with CLOSED
@@ -87,20 +91,21 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def _save_state(self) -> None:
         """Save circuit breaker state to storage."""
         try:
-            state_data = {
-                "state": self._status.status_type.value,
-                "failure_count": getattr(self._status, 'failure_count', 0),
-                # For StatusOpen, use open_until_timestamp; for others, default to 0
-                "open_until": getattr(self._status, 'open_until_timestamp', 0) if hasattr(self._status, 'open_until_timestamp') else 0
-            }
+            state_value: str = self._status.status_type.value
+            failure_count_val: int = int(getattr(self._status, 'failure_count', 0))
+            # For StatusOpen, use open_until_timestamp; for others, default to 0
+            open_until_val: float = float(
+                getattr(self._status, 'open_until_timestamp', 0)
+                if hasattr(self._status, 'open_until_timestamp') else 0
+            )
 
             self.storage.set_state(
                 self.resource_key,
-                state_data["state"],
-                state_data["failure_count"],
-                state_data["open_until"]
+                state_value,
+                failure_count_val,
+                open_until_val
             )
-            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_data['state']}")
+            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_value}")
         except Exception as e:
             logger.error(f"Failed to save state for {self.resource_key}: {e}")
 
@@ -115,20 +120,22 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     @status.setter
     def status(self, new_status: CircuitStatus) -> None:
         old_status = self.status
+        new_status_obj: CircuitStatusBase
         if new_status is CircuitStatus.CLOSED:
             # When transitioning to CLOSED, reset failure count
-            self._status = StatusClosed(policy=self, failure_count=0)
+            new_status_obj = StatusClosed(policy=self, failure_count=0)
         elif new_status is CircuitStatus.OPEN:
             # When transitioning to OPEN, keep the failure count from current status
             current_failure_count = getattr(self._status, 'failure_count', 0)
             # Calculate the open_until timestamp based on current time and cooldown
             from datetime import datetime
             open_until = (datetime.now() + self.cooldown).timestamp()
-            self._status = StatusOpen(policy=self, previous_status=self._status, open_until=open_until)
+            new_status_obj = StatusOpen(policy=self, previous_status=self._status, open_until=open_until)
         else:  # HALF_OPEN
             # When transitioning to HALF_OPEN, reset failure count
-            self._status = StatusHalfOpen(policy=self, failure_count=0)
+            new_status_obj = StatusHalfOpen(policy=self, failure_count=0)
 
+        self._status = new_status_obj
         self.on_status_change(old_status, new_status)
         self._save_state()  # Persist state change
 
