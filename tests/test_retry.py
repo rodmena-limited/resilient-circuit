@@ -1,5 +1,5 @@
 from datetime import timedelta
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 import pytest
 

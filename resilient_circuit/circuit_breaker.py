@@ -1,7 +1,8 @@
 import abc
 import enum
 import logging
-from datetime import datetime, timedelta
+import time
+from datetime import timedelta
 from fractions import Fraction
 from functools import wraps
 from typing import Callable, Optional, TypeVar
@@ -11,7 +12,10 @@ from typing_extensions import ParamSpec
 from resilient_circuit.buffer import BinaryCircularBuffer
 from resilient_circuit.exceptions import ProtectedCallError
 from resilient_circuit.policy import ProtectionPolicy
-from resilient_circuit.storage import CircuitBreakerStorage, InMemoryStorage, create_storage
+from resilient_circuit.storage import (
+    CircuitBreakerStorage,
+    create_storage,
+)
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -56,7 +60,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         self._load_state()
 
     def _load_state(self) -> None:
-        """Load circuit breaker state from storage."""
+        """Load circuit breaker state from storage including execution log buffer."""
         try:
             state_data = self.storage.get_state(self.resource_key)
             if state_data:
@@ -64,6 +68,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 state = CircuitStatus(state_data["state"])
                 failure_count = int(state_data.get("failure_count", 0))
                 open_until = float(state_data.get("open_until", 0))
+                execution_log_data = state_data.get("execution_log")
 
                 # Initialize status based on stored state
                 status: CircuitStatusBase
@@ -77,6 +82,13 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 else:  # HALF_OPEN
                     status = StatusHalfOpen(policy=self, failure_count=failure_count)
 
+                # Restore execution_log buffer if available
+                if execution_log_data and isinstance(execution_log_data, list):
+                    if hasattr(status, 'execution_log') and hasattr(status.execution_log, '_items'):
+                        # Restore buffer maintaining size limit
+                        status.execution_log._items = execution_log_data[-status.execution_log.size:]
+                        logger.debug(f"Restored buffer for {self.resource_key}: {len(status.execution_log._items)} entries")
+
                 self._status = status
                 logger.debug(f"Loaded circuit breaker state for {self.resource_key}: {state.value}")
             else:
@@ -89,7 +101,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             self._status = StatusClosed(policy=self)
 
     def _save_state(self) -> None:
-        """Save circuit breaker state to storage."""
+        """Save circuit breaker state to storage including execution log buffer."""
         try:
             state_value: str = self._status.status_type.value
             failure_count_val: int = int(getattr(self._status, 'failure_count', 0))
@@ -99,13 +111,19 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 if hasattr(self._status, 'open_until_timestamp') else 0
             )
 
+            # Extract execution_log buffer if available
+            execution_log_data = None
+            if hasattr(self._status, 'execution_log') and hasattr(self._status.execution_log, '_items'):
+                execution_log_data = list(self._status.execution_log._items)
+
             self.storage.set_state(
                 self.resource_key,
                 state_value,
                 failure_count_val,
-                open_until_val
+                open_until_val,
+                execution_log=execution_log_data
             )
-            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_value}")
+            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_value}, buffer_size={len(execution_log_data) if execution_log_data else 0}")
         except Exception as e:
             logger.error(f"Failed to save state for {self.resource_key}: {e}")
 
@@ -126,10 +144,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             new_status_obj = StatusClosed(policy=self, failure_count=0)
         elif new_status is CircuitStatus.OPEN:
             # When transitioning to OPEN, keep the failure count from current status
-            current_failure_count = getattr(self._status, 'failure_count', 0)
             # Calculate the open_until timestamp based on current time and cooldown
-            from datetime import datetime
-            open_until = (datetime.now() + self.cooldown).timestamp()
+            open_until = time.time() + self.cooldown.total_seconds()
             new_status_obj = StatusOpen(policy=self, previous_status=self._status, open_until=open_until)
         else:  # HALF_OPEN
             # When transitioning to HALF_OPEN, reset failure count
@@ -147,17 +163,28 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
+            import logging
+            logger = logging.getLogger(__name__)
+
             self._status.validate_execution()
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
-                if self.should_consider_failure(e):
+                should_fail = self.should_consider_failure(e)
+                logger.warning(
+                    f"🚨 CB {self.resource_key}: Exception {type(e).__name__}: {e}, "
+                    f"should_consider_failure={should_fail}"
+                )
+                if should_fail:
+                    logger.warning(f"❌ CB {self.resource_key}: Calling mark_failure()")
                     self._status.mark_failure()
                 else:
+                    logger.warning(f"✅ CB {self.resource_key}: Exception ignored, calling mark_success()")
                     self._status.mark_success()
                 self._save_state()  # Persist state after exception
                 raise
             else:
+                logger.warning(f"✅ CB {self.resource_key}: Success, calling mark_success()")
                 self._status.mark_success()
                 self._save_state()  # Persist state after success
                 return result
@@ -205,13 +232,31 @@ class StatusClosed(CircuitStatusBase):
         pass
 
     def mark_failure(self) -> None:
+        import logging
+        logger = logging.getLogger(__name__)
+
         self.failure_count += 1  # Increment failure count
         self.execution_log.add(False)
+
+        logger.warning(
+            f"📊 CB {self.policy.resource_key} mark_failure: "
+            f"buffer={list(self.execution_log._items)}, "
+            f"is_full={self.execution_log.is_full}, "
+            f"size={self.execution_log.size}, "
+            f"failure_rate={self.execution_log.failure_rate}, "
+            f"threshold={self.policy.failure_limit}"
+        )
+
         if (
             self.execution_log.is_full
             and self.execution_log.failure_rate >= self.policy.failure_limit
         ):
-            self.policy.status = CircuitStatus.OPEN
+            logger.warning(f"🔴 CB {self.policy.resource_key}: Opening circuit!")
+            try:
+                self.policy.status = CircuitStatus.OPEN
+                logger.warning(f"✅ CB {self.policy.resource_key}: Successfully set status to OPEN")
+            except Exception as e:
+                logger.error(f"❌ CB {self.policy.resource_key}: Failed to set status to OPEN: {type(e).__name__}: {e}", exc_info=True)
 
     def mark_success(self) -> None:
         self.failure_count = 0  # Reset failure count on success
@@ -232,17 +277,15 @@ class StatusOpen(CircuitStatusBase):
 
         # Store the timestamp when the OPEN state should end (cooldown period)
         # If open_until is 0, circuit should be blocked for the full cooldown period
-        from datetime import datetime
         if open_until and open_until > 0:
             self.open_until_timestamp = open_until  # This is when cooldown ends
         else:
             # Calculate when cooldown should end based on current time and policy cooldown
-            self.open_until_timestamp = (datetime.now() + policy.cooldown).timestamp()
+            self.open_until_timestamp = time.time() + policy.cooldown.total_seconds()
 
     def validate_execution(self) -> None:
-        from datetime import datetime
         # Check if cooldown period has expired
-        if datetime.now().timestamp() >= self.open_until_timestamp:
+        if time.time() >= self.open_until_timestamp:
             # Cooldown expired, transition to HALF_OPEN to allow test requests
             self.policy.status = CircuitStatus.HALF_OPEN
             return  # Allow execution in HALF_OPEN state

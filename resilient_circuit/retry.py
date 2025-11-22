@@ -5,7 +5,7 @@ from typing import Callable, Optional, TypeVar
 from typing_extensions import ParamSpec
 
 from resilient_circuit.backoff import ExponentialDelay
-from resilient_circuit.exceptions import ProtectedCallError, RetryLimitReached
+from resilient_circuit.exceptions import RetryLimitReached
 from resilient_circuit.policy import ProtectionPolicy
 
 R = TypeVar("R")

@@ -1,8 +1,8 @@
+import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
-import logging
+from typing import Any, Dict, Optional
 
 try:
     from dotenv import load_dotenv
@@ -23,20 +23,24 @@ logger = logging.getLogger(__name__)
 
 class CircuitBreakerStorage(ABC):
     """Abstract base class for circuit breaker storage backends."""
-    
+
     @abstractmethod
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
         """Get the state for a given resource key.
-        
+
         Returns:
-            Dictionary with keys: state, failure_count, open_until
+            Dictionary with keys: state, failure_count, open_until, execution_log (optional)
             or None if no state found
         """
         pass
-    
+
     @abstractmethod
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float) -> None:
-        """Set the state for a given resource key."""
+    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+        """Set the state for a given resource key.
+
+        Args:
+            execution_log: Optional list of boolean success/failure results
+        """
         pass
 
 
@@ -49,12 +53,15 @@ class InMemoryStorage(CircuitBreakerStorage):
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
         return self._states.get(resource_key)
 
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float) -> None:
-        self._states[resource_key] = {
+    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+        state_dict = {
             "state": state,
             "failure_count": failure_count,
             "open_until": open_until
         }
+        if execution_log is not None:
+            state_dict["execution_log"] = execution_log
+        self._states[resource_key] = state_dict
 
 
 class PostgresStorage(CircuitBreakerStorage):
@@ -67,11 +74,11 @@ class PostgresStorage(CircuitBreakerStorage):
         self.connection_string = connection_string
         self.namespace = namespace
         self._ensure_table_exists()
-    
+
     def _get_connection(self) -> Connection:
         """Get a database connection."""
         return psycopg.connect(self.connection_string)
-    
+
     def _ensure_table_exists(self) -> None:
         """Ensure the circuit breaker table exists with namespace support."""
         try:
@@ -154,7 +161,7 @@ class PostgresStorage(CircuitBreakerStorage):
         except Exception as e:
             logger.error(f"Failed to ensure table exists: {e}")
             raise
-    
+
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
         """Get the state for a given resource key within this namespace.
 
@@ -166,7 +173,7 @@ class PostgresStorage(CircuitBreakerStorage):
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT state, failure_count, open_until "
+                        "SELECT state, failure_count, open_until, execution_log "
                         "FROM rc_circuit_breakers "
                         "WHERE resource_key = %s AND namespace = %s "
                         "FOR UPDATE",
@@ -174,19 +181,32 @@ class PostgresStorage(CircuitBreakerStorage):
                     )
                     row = cur.fetchone()
                     if row:
-                        return {
+                        result = {
                             "state": row[0],
                             "failure_count": row[1],
                             "open_until": row[2].timestamp() if row[2] else 0
                         }
+                        # Add execution_log if present
+                        if row[3] is not None:
+                            result["execution_log"] = row[3]
+                        return result
                     return None
         except Exception as e:
             logger.error(f"Failed to get state for {resource_key} (namespace={self.namespace}): {e}")
             raise
-    
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float) -> None:
-        """Set the state for a given resource key within this namespace."""
+
+    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+        """Set the state for a given resource key within this namespace.
+
+        Args:
+            resource_key: Unique circuit breaker identifier
+            state: Circuit state (CLOSED, OPEN, HALF_OPEN)
+            failure_count: Number of consecutive failures
+            open_until: Timestamp when circuit can transition from OPEN
+            execution_log: Optional list of boolean success/failure results for the circular buffer
+        """
         try:
+            import json
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     # Convert timestamp to PostgreSQL timestamp
@@ -194,19 +214,40 @@ class PostgresStorage(CircuitBreakerStorage):
                     if open_until > 0:
                         open_until_ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(open_until))
 
-                    cur.execute(
-                        """
-                        INSERT INTO rc_circuit_breakers
-                            (resource_key, namespace, state, failure_count, open_until)
-                        VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (resource_key, namespace) DO UPDATE SET
-                            state = EXCLUDED.state,
-                            failure_count = EXCLUDED.failure_count,
-                            open_until = EXCLUDED.open_until,
-                            updated_at = CURRENT_TIMESTAMP
-                        """,
-                        (resource_key, self.namespace, state, failure_count, open_until_ts)
-                    )
+                    # Serialize execution_log to JSON if provided
+                    execution_log_json = json.dumps(execution_log) if execution_log is not None else None
+
+                    if execution_log is not None:
+                        # Update including execution_log
+                        cur.execute(
+                            """
+                            INSERT INTO rc_circuit_breakers
+                                (resource_key, namespace, state, failure_count, open_until, execution_log)
+                            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                            ON CONFLICT (resource_key, namespace) DO UPDATE SET
+                                state = EXCLUDED.state,
+                                failure_count = EXCLUDED.failure_count,
+                                open_until = EXCLUDED.open_until,
+                                execution_log = EXCLUDED.execution_log,
+                                updated_at = CURRENT_TIMESTAMP
+                            """,
+                            (resource_key, self.namespace, state, failure_count, open_until_ts, execution_log_json)
+                        )
+                    else:
+                        # Update without execution_log (preserve existing value)
+                        cur.execute(
+                            """
+                            INSERT INTO rc_circuit_breakers
+                                (resource_key, namespace, state, failure_count, open_until)
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON CONFLICT (resource_key, namespace) DO UPDATE SET
+                                state = EXCLUDED.state,
+                                failure_count = EXCLUDED.failure_count,
+                                open_until = EXCLUDED.open_until,
+                                updated_at = CURRENT_TIMESTAMP
+                            """,
+                            (resource_key, self.namespace, state, failure_count, open_until_ts)
+                        )
                     conn.commit()
         except Exception as e:
             logger.error(f"Failed to set state for {resource_key} (namespace={self.namespace}): {e}")

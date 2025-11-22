@@ -5,7 +5,6 @@ CLI module for Highway Circuit Breaker
 import argparse
 import os
 import sys
-from typing import Optional
 
 try:
     import psycopg
@@ -66,7 +65,7 @@ def create_postgres_table(config: dict) -> bool:
 
                 table_exists = cur.fetchone()[0]
                 if table_exists:
-                    print(f"ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates...")
+                    print("ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates...")
 
                 # Create the circuit breaker table
                 cur.execute("""
@@ -180,7 +179,7 @@ def run_pg_setup(args: argparse.Namespace) -> int:
     # Get config from environment
     config = get_db_config_from_env()
 
-    print(f"🔧 Using database configuration from environment:")
+    print("🔧 Using database configuration from environment:")
     print(f"   Host: {config['host']}")
     print(f"   Port: {config['port']}")
     print(f"   Database: {config['dbname']}")
