@@ -47,11 +47,14 @@ class TestRetryWithBackoffPolicy:
     def test_should_retry_with_delays_between_calls(self, monkeypatch):
         # given
         sleep_calls = []
+
         def mock_sleep(seconds):
             sleep_calls.append(seconds)
 
         monkeypatch.setattr(retry_module, "sleep", mock_sleep)
-        backoff_retries = RetryWithBackoffPolicy(backoff=FixedDelay(timedelta(seconds=1)))
+        backoff_retries = RetryWithBackoffPolicy(
+            backoff=FixedDelay(timedelta(seconds=1))
+        )
         method = Mock(side_effect=[RuntimeError, RuntimeError, "test"])
 
         # when
@@ -62,7 +65,9 @@ class TestRetryWithBackoffPolicy:
 
     def test_should_retry_when_exception_must_be_handled(self):
         # given
-        backoff_retries = RetryWithBackoffPolicy(max_retries=3, should_handle=lambda e: isinstance(e, RuntimeError))
+        backoff_retries = RetryWithBackoffPolicy(
+            max_retries=3, should_handle=lambda e: isinstance(e, RuntimeError)
+        )
         method = Mock(side_effect=[RuntimeError, RuntimeError, "test"])
 
         # when
@@ -74,7 +79,9 @@ class TestRetryWithBackoffPolicy:
 
     def test_should_abort_when_exception_must_not_be_handled(self):
         # given
-        backoff_retries = RetryWithBackoffPolicy(max_retries=3, should_handle=lambda e: isinstance(e, RuntimeError))
+        backoff_retries = RetryWithBackoffPolicy(
+            max_retries=3, should_handle=lambda e: isinstance(e, RuntimeError)
+        )
         method = Mock(side_effect=ValueError)
 
         # when / then

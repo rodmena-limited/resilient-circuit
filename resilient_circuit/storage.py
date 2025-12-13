@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
     HAS_DOTENV = True
 except ImportError:
@@ -14,6 +15,7 @@ except ImportError:
 try:
     import psycopg
     from psycopg import Connection
+
     HAS_PSYCOPG = True
 except ImportError:
     HAS_PSYCOPG = False
@@ -35,7 +37,14 @@ class CircuitBreakerStorage(ABC):
         pass
 
     @abstractmethod
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+    def set_state(
+        self,
+        resource_key: str,
+        state: str,
+        failure_count: int,
+        open_until: float,
+        execution_log: Optional[list] = None,
+    ) -> None:
         """Set the state for a given resource key.
 
         Args:
@@ -53,11 +62,18 @@ class InMemoryStorage(CircuitBreakerStorage):
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
         return self._states.get(resource_key)
 
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+    def set_state(
+        self,
+        resource_key: str,
+        state: str,
+        failure_count: int,
+        open_until: float,
+        execution_log: Optional[list] = None,
+    ) -> None:
         state_dict = {
             "state": state,
             "failure_count": failure_count,
-            "open_until": open_until
+            "open_until": open_until,
         }
         if execution_log is not None:
             state_dict["execution_log"] = execution_log
@@ -69,7 +85,9 @@ class PostgresStorage(CircuitBreakerStorage):
 
     def __init__(self, connection_string: str, namespace: str = "default"):
         if not HAS_PSYCOPG:
-            raise ImportError("psycopg3 is required for PostgreSQL storage. Install with: pip install psycopg[binary]")
+            raise ImportError(
+                "psycopg3 is required for PostgreSQL storage. Install with: pip install psycopg[binary]"
+            )
 
         self.connection_string = connection_string
         self.namespace = namespace
@@ -101,6 +119,7 @@ class PostgresStorage(CircuitBreakerStorage):
                                 state VARCHAR(50) NOT NULL,
                                 failure_count INTEGER NOT NULL DEFAULT 0,
                                 open_until TIMESTAMP,
+                                execution_log JSONB,
                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                 namespace VARCHAR(255) NOT NULL DEFAULT 'default',
@@ -108,7 +127,7 @@ class PostgresStorage(CircuitBreakerStorage):
                             )
                         """)
 
-                        # Add namespace column to existing table if it exists
+                        # Add namespace and execution_log columns to existing table if it exists
                         cur.execute("""
                             DO $$
                             BEGIN
@@ -119,6 +138,9 @@ class PostgresStorage(CircuitBreakerStorage):
 
                                     ALTER TABLE rc_circuit_breakers
                                     ADD COLUMN IF NOT EXISTS namespace VARCHAR(255) NOT NULL DEFAULT 'default';
+
+                                    ALTER TABLE rc_circuit_breakers
+                                    ADD COLUMN IF NOT EXISTS execution_log JSONB;
 
                                     ALTER TABLE rc_circuit_breakers
                                     ADD PRIMARY KEY (resource_key, namespace);
@@ -133,11 +155,18 @@ class PostgresStorage(CircuitBreakerStorage):
                                 state VARCHAR(50) NOT NULL,
                                 failure_count INTEGER NOT NULL DEFAULT 0,
                                 open_until TIMESTAMP,
+                                execution_log JSONB,
                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                 namespace VARCHAR(255) NOT NULL DEFAULT 'default',
                                 PRIMARY KEY (resource_key, namespace)
                             )
+                        """)
+
+                        # Add execution_log column if missing (migration for older tables)
+                        cur.execute("""
+                            ALTER TABLE rc_circuit_breakers
+                            ADD COLUMN IF NOT EXISTS execution_log JSONB
                         """)
 
                     # Create indexes for better performance
@@ -157,7 +186,9 @@ class PostgresStorage(CircuitBreakerStorage):
                     """)
 
                     conn.commit()
-                    logger.info(f"PostgreSQL circuit breaker table ensured (namespace={self.namespace})")
+                    logger.info(
+                        f"PostgreSQL circuit breaker table ensured (namespace={self.namespace})"
+                    )
         except Exception as e:
             logger.error(f"Failed to ensure table exists: {e}")
             raise
@@ -177,14 +208,14 @@ class PostgresStorage(CircuitBreakerStorage):
                         "FROM rc_circuit_breakers "
                         "WHERE resource_key = %s AND namespace = %s "
                         "FOR UPDATE",
-                        (resource_key, self.namespace)
+                        (resource_key, self.namespace),
                     )
                     row = cur.fetchone()
                     if row:
                         result = {
                             "state": row[0],
                             "failure_count": row[1],
-                            "open_until": row[2].timestamp() if row[2] else 0
+                            "open_until": row[2].timestamp() if row[2] else 0,
                         }
                         # Add execution_log if present
                         if row[3] is not None:
@@ -192,10 +223,19 @@ class PostgresStorage(CircuitBreakerStorage):
                         return result
                     return None
         except Exception as e:
-            logger.error(f"Failed to get state for {resource_key} (namespace={self.namespace}): {e}")
+            logger.error(
+                f"Failed to get state for {resource_key} (namespace={self.namespace}): {e}"
+            )
             raise
 
-    def set_state(self, resource_key: str, state: str, failure_count: int, open_until: float, execution_log: Optional[list] = None) -> None:
+    def set_state(
+        self,
+        resource_key: str,
+        state: str,
+        failure_count: int,
+        open_until: float,
+        execution_log: Optional[list] = None,
+    ) -> None:
         """Set the state for a given resource key within this namespace.
 
         Args:
@@ -207,15 +247,20 @@ class PostgresStorage(CircuitBreakerStorage):
         """
         try:
             import json
+
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     # Convert timestamp to PostgreSQL timestamp
                     open_until_ts = None
                     if open_until > 0:
-                        open_until_ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(open_until))
+                        open_until_ts = time.strftime(
+                            "%Y-%m-%d %H:%M:%S", time.localtime(open_until)
+                        )
 
                     # Serialize execution_log to JSON if provided
-                    execution_log_json = json.dumps(execution_log) if execution_log is not None else None
+                    execution_log_json = (
+                        json.dumps(execution_log) if execution_log is not None else None
+                    )
 
                     if execution_log is not None:
                         # Update including execution_log
@@ -231,7 +276,14 @@ class PostgresStorage(CircuitBreakerStorage):
                                 execution_log = EXCLUDED.execution_log,
                                 updated_at = CURRENT_TIMESTAMP
                             """,
-                            (resource_key, self.namespace, state, failure_count, open_until_ts, execution_log_json)
+                            (
+                                resource_key,
+                                self.namespace,
+                                state,
+                                failure_count,
+                                open_until_ts,
+                                execution_log_json,
+                            ),
                         )
                     else:
                         # Update without execution_log (preserve existing value)
@@ -246,11 +298,19 @@ class PostgresStorage(CircuitBreakerStorage):
                                 open_until = EXCLUDED.open_until,
                                 updated_at = CURRENT_TIMESTAMP
                             """,
-                            (resource_key, self.namespace, state, failure_count, open_until_ts)
+                            (
+                                resource_key,
+                                self.namespace,
+                                state,
+                                failure_count,
+                                open_until_ts,
+                            ),
                         )
                     conn.commit()
         except Exception as e:
-            logger.error(f"Failed to set state for {resource_key} (namespace={self.namespace}): {e}")
+            logger.error(
+                f"Failed to set state for {resource_key} (namespace={self.namespace}): {e}"
+            )
             raise
 
 
@@ -281,7 +341,9 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
         connection_string = f"host={db_host} port={db_port} dbname={db_name} user={db_user} password={db_password}"
         try:
             storage = PostgresStorage(connection_string, namespace=namespace)
-            logger.info(f"Using PostgreSQL storage for circuit breaker: host={db_host}, db={db_name}, namespace={namespace}")
+            logger.info(
+                f"Using PostgreSQL storage for circuit breaker: host={db_host}, db={db_name}, namespace={namespace}"
+            )
             return storage
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL storage: {e}")
@@ -289,5 +351,7 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
             return InMemoryStorage()
     else:
         # Default to in-memory storage
-        logger.info(f"Using in-memory storage for circuit breaker (no PostgreSQL config found), namespace={namespace}")
+        logger.info(
+            f"Using in-memory storage for circuit breaker (no PostgreSQL config found), namespace={namespace}"
+        )
         return InMemoryStorage()

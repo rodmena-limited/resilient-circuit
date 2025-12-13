@@ -15,7 +15,7 @@ class TestExponentialDelay:
 
         # when / then
         with pytest.raises(FrozenInstanceError):
-            backoff.min_delay = timedelta(10)
+            backoff.min_delay = timedelta(10)  # type: ignore[misc]
 
     def test_should_construct_backoff_with_defaults(self):
         # when
@@ -53,7 +53,9 @@ class TestExponentialDelay:
     def test_should_require_jitter_to_be_in_closed_0_1_range(self, expectation, jitter):
         # when / then
         with expectation:
-            ExponentialDelay(min_delay=timedelta(0), max_delay=timedelta(1), jitter=jitter)
+            ExponentialDelay(
+                min_delay=timedelta(0), max_delay=timedelta(1), jitter=jitter
+            )
 
     @pytest.mark.parametrize(
         ["attempt", "expected"],

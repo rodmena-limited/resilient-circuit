@@ -78,23 +78,35 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                     # For OPEN state, we need a previous status to pass to the constructor
                     # We'll use a temporary closed status with same failure count
                     temp_status = StatusClosed(policy=self, failure_count=failure_count)
-                    status = StatusOpen(policy=self, previous_status=temp_status, open_until=open_until)
+                    status = StatusOpen(
+                        policy=self, previous_status=temp_status, open_until=open_until
+                    )
                 else:  # HALF_OPEN
                     status = StatusHalfOpen(policy=self, failure_count=failure_count)
 
                 # Restore execution_log buffer if available
                 if execution_log_data and isinstance(execution_log_data, list):
-                    if hasattr(status, 'execution_log') and hasattr(status.execution_log, '_items'):
+                    if hasattr(status, "execution_log") and hasattr(
+                        status.execution_log, "_items"
+                    ):
                         # Restore buffer maintaining size limit
-                        status.execution_log._items = execution_log_data[-status.execution_log.size:]
-                        logger.debug(f"Restored buffer for {self.resource_key}: {len(status.execution_log._items)} entries")
+                        status.execution_log._items = execution_log_data[
+                            -status.execution_log.size :
+                        ]
+                        logger.debug(
+                            f"Restored buffer for {self.resource_key}: {len(status.execution_log._items)} entries"
+                        )
 
                 self._status = status
-                logger.debug(f"Loaded circuit breaker state for {self.resource_key}: {state.value}")
+                logger.debug(
+                    f"Loaded circuit breaker state for {self.resource_key}: {state.value}"
+                )
             else:
                 # No state found, start with CLOSED
                 self._status = StatusClosed(policy=self)
-                logger.debug(f"No stored state found for {self.resource_key}, starting with CLOSED")
+                logger.debug(
+                    f"No stored state found for {self.resource_key}, starting with CLOSED"
+                )
         except Exception as e:
             logger.error(f"Failed to load state for {self.resource_key}: {e}")
             # Fallback to default state
@@ -104,16 +116,19 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         """Save circuit breaker state to storage including execution log buffer."""
         try:
             state_value: str = self._status.status_type.value
-            failure_count_val: int = int(getattr(self._status, 'failure_count', 0))
+            failure_count_val: int = int(getattr(self._status, "failure_count", 0))
             # For StatusOpen, use open_until_timestamp; for others, default to 0
             open_until_val: float = float(
-                getattr(self._status, 'open_until_timestamp', 0)
-                if hasattr(self._status, 'open_until_timestamp') else 0
+                getattr(self._status, "open_until_timestamp", 0)
+                if hasattr(self._status, "open_until_timestamp")
+                else 0
             )
 
             # Extract execution_log buffer if available
             execution_log_data = None
-            if hasattr(self._status, 'execution_log') and hasattr(self._status.execution_log, '_items'):
+            if hasattr(self._status, "execution_log") and hasattr(
+                self._status.execution_log, "_items"
+            ):
                 execution_log_data = list(self._status.execution_log._items)
 
             self.storage.set_state(
@@ -121,9 +136,11 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 state_value,
                 failure_count_val,
                 open_until_val,
-                execution_log=execution_log_data
+                execution_log=execution_log_data,
             )
-            logger.debug(f"Saved circuit breaker state for {self.resource_key}: {state_value}, buffer_size={len(execution_log_data) if execution_log_data else 0}")
+            logger.debug(
+                f"Saved circuit breaker state for {self.resource_key}: {state_value}, buffer_size={len(execution_log_data) if execution_log_data else 0}"
+            )
         except Exception as e:
             logger.error(f"Failed to save state for {self.resource_key}: {e}")
 
@@ -146,7 +163,9 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             # When transitioning to OPEN, keep the failure count from current status
             # Calculate the open_until timestamp based on current time and cooldown
             open_until = time.time() + self.cooldown.total_seconds()
-            new_status_obj = StatusOpen(policy=self, previous_status=self._status, open_until=open_until)
+            new_status_obj = StatusOpen(
+                policy=self, previous_status=self._status, open_until=open_until
+            )
         else:  # HALF_OPEN
             # When transitioning to HALF_OPEN, reset failure count
             new_status_obj = StatusHalfOpen(policy=self, failure_count=0)
@@ -164,6 +183,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         @wraps(func)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
             import logging
+
             logger = logging.getLogger(__name__)
 
             self._status.validate_execution()
@@ -179,12 +199,16 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                     logger.warning(f"❌ CB {self.resource_key}: Calling mark_failure()")
                     self._status.mark_failure()
                 else:
-                    logger.warning(f"✅ CB {self.resource_key}: Exception ignored, calling mark_success()")
+                    logger.warning(
+                        f"✅ CB {self.resource_key}: Exception ignored, calling mark_success()"
+                    )
                     self._status.mark_success()
                 self._save_state()  # Persist state after exception
                 raise
             else:
-                logger.warning(f"✅ CB {self.resource_key}: Success, calling mark_success()")
+                logger.warning(
+                    f"✅ CB {self.resource_key}: Success, calling mark_success()"
+                )
                 self._status.mark_success()
                 self._save_state()  # Persist state after success
                 return result
@@ -233,6 +257,7 @@ class StatusClosed(CircuitStatusBase):
 
     def mark_failure(self) -> None:
         import logging
+
         logger = logging.getLogger(__name__)
 
         self.failure_count += 1  # Increment failure count
@@ -254,9 +279,14 @@ class StatusClosed(CircuitStatusBase):
             logger.warning(f"🔴 CB {self.policy.resource_key}: Opening circuit!")
             try:
                 self.policy.status = CircuitStatus.OPEN
-                logger.warning(f"✅ CB {self.policy.resource_key}: Successfully set status to OPEN")
+                logger.warning(
+                    f"✅ CB {self.policy.resource_key}: Successfully set status to OPEN"
+                )
             except Exception as e:
-                logger.error(f"❌ CB {self.policy.resource_key}: Failed to set status to OPEN: {type(e).__name__}: {e}", exc_info=True)
+                logger.error(
+                    f"❌ CB {self.policy.resource_key}: Failed to set status to OPEN: {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
 
     def mark_success(self) -> None:
         self.failure_count = 0  # Reset failure count on success
@@ -266,12 +296,17 @@ class StatusClosed(CircuitStatusBase):
 class StatusOpen(CircuitStatusBase):
     status_type = CircuitStatus.OPEN
 
-    def __init__(self, policy: CircuitProtectorPolicy, previous_status: CircuitStatusBase, open_until: float = 0) -> None:
+    def __init__(
+        self,
+        policy: CircuitProtectorPolicy,
+        previous_status: CircuitStatusBase,
+        open_until: float = 0,
+    ) -> None:
         super().__init__(policy)
         self.execution_log = previous_status.execution_log
         # Handle setting failure_count from previous_status if it exists
-        if hasattr(previous_status, 'failure_count'):
-            self.failure_count = getattr(previous_status, 'failure_count', 0)
+        if hasattr(previous_status, "failure_count"):
+            self.failure_count = getattr(previous_status, "failure_count", 0)
         else:
             self.failure_count = 0
 

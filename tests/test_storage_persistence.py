@@ -1,4 +1,5 @@
 """Tests for storage backend and state persistence (critical for distributed systems)."""
+
 import os
 from datetime import timedelta
 from unittest.mock import Mock
@@ -87,7 +88,7 @@ class TestInMemoryStorage:
 
 @pytest.mark.skipif(
     not os.getenv("RC_DB_HOST"),
-    reason="PostgreSQL not configured (no RC_DB_HOST env var)"
+    reason="PostgreSQL not configured (no RC_DB_HOST env var)",
 )
 class TestPostgresStorage:
     """Test PostgresStorage backend - requires PostgreSQL to be running."""
@@ -110,7 +111,9 @@ class TestPostgresStorage:
             # Cleanup: delete test keys
             with storage._get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("DELETE FROM rc_circuit_breakers WHERE resource_key LIKE 'test_%'")
+                    cur.execute(
+                        "DELETE FROM rc_circuit_breakers WHERE resource_key LIKE 'test_%'"
+                    )
                     conn.commit()
         except Exception as e:
             pytest.skip(f"PostgreSQL not available: {e}")
@@ -145,6 +148,7 @@ class TestCircuitBreakerPersistence:
     def shared_resource_key(self):
         """Use a unique resource key for each test."""
         import uuid
+
         return f"test_resource_{uuid.uuid4().hex[:8]}"
 
     def test_should_persist_state_across_instances_with_same_resource_key(
@@ -156,8 +160,7 @@ class TestCircuitBreakerPersistence:
         """
         # Create first circuit breaker instance
         cb1 = CircuitProtectorPolicy(
-            resource_key=shared_resource_key,
-            cooldown=timedelta(seconds=1)
+            resource_key=shared_resource_key, cooldown=timedelta(seconds=1)
         )
 
         # Verify it starts in CLOSED state
@@ -169,8 +172,7 @@ class TestCircuitBreakerPersistence:
 
         # Create SECOND instance with same resource_key (simulates another server/process)
         cb2 = CircuitProtectorPolicy(
-            resource_key=shared_resource_key,
-            cooldown=timedelta(seconds=1)
+            resource_key=shared_resource_key, cooldown=timedelta(seconds=1)
         )
 
         # Check if storage is PostgresStorage (durable) or InMemoryStorage (non-durable)
@@ -236,7 +238,7 @@ class TestDistributedSystemScenario:
 
     @pytest.mark.skipif(
         not isinstance(create_storage(), PostgresStorage),
-        reason="This test requires PostgreSQL for distributed state sharing"
+        reason="This test requires PostgreSQL for distributed state sharing",
     )
     def test_distributed_circuit_breaker_protects_shared_resource(self):
         """
@@ -248,8 +250,7 @@ class TestDistributedSystemScenario:
 
         # Service 1 detects failures and opens circuit
         service1_cb = CircuitProtectorPolicy(
-            resource_key=shared_api_key,
-            cooldown=timedelta(seconds=5)
+            resource_key=shared_api_key, cooldown=timedelta(seconds=5)
         )
 
         # Simulate failure
@@ -257,8 +258,7 @@ class TestDistributedSystemScenario:
 
         # Service 2 (on different server) should immediately see OPEN state
         service2_cb = CircuitProtectorPolicy(
-            resource_key=shared_api_key,
-            cooldown=timedelta(seconds=5)
+            resource_key=shared_api_key, cooldown=timedelta(seconds=5)
         )
 
         assert service2_cb.status == CircuitStatus.OPEN, (
@@ -267,8 +267,7 @@ class TestDistributedSystemScenario:
 
         # Service 3 (on yet another server) should also see OPEN state
         service3_cb = CircuitProtectorPolicy(
-            resource_key=shared_api_key,
-            cooldown=timedelta(seconds=5)
+            resource_key=shared_api_key, cooldown=timedelta(seconds=5)
         )
 
         assert service3_cb.status == CircuitStatus.OPEN, (

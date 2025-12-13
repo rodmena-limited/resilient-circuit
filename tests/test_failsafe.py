@@ -12,7 +12,9 @@ from resilient_circuit.retry import RetryWithBackoffPolicy
 class TestSafetyNet:
     @pytest.fixture
     def protector(self):
-        yield CircuitProtectorPolicy(cooldown=timedelta(seconds=1))
+        yield CircuitProtectorPolicy(
+            resource_key="test_failsafe", cooldown=timedelta(seconds=1)
+        )
 
     @pytest.fixture
     def backoff_retries(self):

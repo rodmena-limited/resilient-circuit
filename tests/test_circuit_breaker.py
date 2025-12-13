@@ -13,11 +13,13 @@ from resilient_circuit.exceptions import ProtectedCallError
 class TestCircuitProtector:
     @pytest.fixture
     def protector(self):
-        yield CircuitProtectorPolicy(cooldown=timedelta(milliseconds=50))
+        yield CircuitProtectorPolicy(
+            resource_key="test_circuit_breaker", cooldown=timedelta(milliseconds=50)
+        )
 
     def test_should_construct_policy_with_defaults(self):
         # given
-        protector = CircuitProtectorPolicy()
+        protector = CircuitProtectorPolicy(resource_key="test_defaults")
 
         # then
         assert protector.cooldown == timedelta(0)
@@ -137,7 +139,9 @@ class TestCircuitProtector:
     def test_should_invoke_on_status_change_when_status_is_changed(self, protector):
         # given
         state_change_callback = Mock()
-        protector = CircuitProtectorPolicy(on_status_change=state_change_callback)
+        protector = CircuitProtectorPolicy(
+            resource_key="test_status_change", on_status_change=state_change_callback
+        )
 
         # when
         protector.status = CircuitStatus.OPEN
@@ -156,7 +160,9 @@ class TestCircuitProtector:
 class TestCircuitProtectorWithLimits:
     def test_should_open_after_reaching_failure_limit(self):
         # given
-        protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
+        protector = CircuitProtectorPolicy(
+            resource_key="test_failure_limit", failure_limit=Fraction(2, 5)
+        )
         method = Mock(
             side_effect=[
                 "response-1",
@@ -184,7 +190,9 @@ class TestCircuitProtectorWithLimits:
 
     def test_should_stay_closed_before_reaching_failure_limit(self):
         # given
-        protector = CircuitProtectorPolicy(failure_limit=Fraction(3, 5))
+        protector = CircuitProtectorPolicy(
+            resource_key="test_stay_closed", failure_limit=Fraction(3, 5)
+        )
         method = Mock(
             side_effect=[
                 "response-1",
@@ -213,6 +221,7 @@ class TestCircuitProtectorWithLimits:
     def test_should_close_after_reaching_success_limit(self):
         # given
         protector = CircuitProtectorPolicy(
+            resource_key="test_success_limit",
             success_limit=Fraction(3, 5),
             failure_limit=Fraction(2, 10),
         )
@@ -243,7 +252,9 @@ class TestCircuitProtectorWithLimits:
         self,
     ):
         # given
-        protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
+        protector = CircuitProtectorPolicy(
+            resource_key="test_no_success_limit", failure_limit=Fraction(2, 5)
+        )
         protector.status = CircuitStatus.HALF_OPEN
         method = Mock(
             side_effect=[
@@ -267,8 +278,9 @@ class TestCircuitProtectorWithLimits:
         # given
         # Need a cooldown to prevent immediate transition to HALF_OPEN
         protector = CircuitProtectorPolicy(
+            resource_key="test_stay_open",
             success_limit=Fraction(4, 5),
-            cooldown=timedelta(seconds=10)  # Long cooldown to keep it OPEN
+            cooldown=timedelta(seconds=10),  # Long cooldown to keep it OPEN
         )
         protector.status = CircuitStatus.OPEN
         method = Mock(
@@ -295,7 +307,10 @@ class TestCircuitProtectorWithLimits:
 class TestCircuitProtectorWithExceptionHandling:
     def test_should_open_when_exception_must_be_handled(self):
         # given
-        protector = CircuitProtectorPolicy(should_handle=lambda e: isinstance(e, ValueError))
+        protector = CircuitProtectorPolicy(
+            resource_key="test_value_error",
+            should_handle=lambda e: isinstance(e, ValueError),
+        )
         method = Mock(side_effect=ValueError)
 
         # when
@@ -307,7 +322,10 @@ class TestCircuitProtectorWithExceptionHandling:
 
     def test_should_stay_closed_when_exception_must_not_be_handled(self):
         # given
-        protector = CircuitProtectorPolicy(should_handle=lambda e: isinstance(e, RuntimeError))
+        protector = CircuitProtectorPolicy(
+            resource_key="test_runtime_error",
+            should_handle=lambda e: isinstance(e, RuntimeError),
+        )
         method = Mock(side_effect=ValueError)
 
         # when

@@ -2,54 +2,68 @@
 CLI module for Highway Circuit Breaker
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
+from typing import Any
+
+HAS_PSYCOPG = False
+HAS_DOTENV = False
+psycopg: Any = None
+load_dotenv: Any = None
 
 try:
     import psycopg
+
+    HAS_PSYCOPG = True
 except ImportError:
-    psycopg = None
+    pass
 
 try:
     from dotenv import load_dotenv
+
+    HAS_DOTENV = True
 except ImportError:
-    load_dotenv = None
+    pass
 
 
-def load_env_vars():
+def load_env_vars() -> None:
     """Load environment variables from .env file if available."""
-    if load_dotenv:
+    if HAS_DOTENV and load_dotenv is not None:
         load_dotenv()
     else:
         print("Warning: python-dotenv not found, skipping .env file loading")
 
 
-def get_db_config_from_env() -> dict:
+def get_db_config_from_env() -> dict[str, Any]:
     """Get database configuration from environment variables."""
     return {
-        'host': os.getenv('RC_DB_HOST', 'localhost'),
-        'port': int(os.getenv('RC_DB_PORT', '5432')),
-        'dbname': os.getenv('RC_DB_NAME', 'resilient_circuit_db'),
-        'user': os.getenv('RC_DB_USER', 'postgres'),
-        'password': os.getenv('RC_DB_PASSWORD', 'postgres')
+        "host": os.getenv("RC_DB_HOST", "localhost"),
+        "port": int(os.getenv("RC_DB_PORT", "5432")),
+        "dbname": os.getenv("RC_DB_NAME", "resilient_circuit_db"),
+        "user": os.getenv("RC_DB_USER", "postgres"),
+        "password": os.getenv("RC_DB_PASSWORD", "postgres"),
     }
 
 
-def create_postgres_table(config: dict) -> bool:
+def create_postgres_table(config: dict[str, Any]) -> bool:
     """Create the circuit breaker table in PostgreSQL database."""
-    if not psycopg:
-        print("Error: psycopg is required for PostgreSQL setup. Install with: pip install resilient_circuit[postgres]")
+    if not HAS_PSYCOPG or psycopg is None:
+        print(
+            "Error: psycopg is required for PostgreSQL setup. Install with: pip install resilient_circuit[postgres]"
+        )
         return False
 
     try:
         # Connect to the database
         conn = psycopg.connect(
-            host=config['host'],
-            port=config['port'],
-            dbname=config['dbname'],
-            user=config['user'],
-            password=config['password']
+            host=config["host"],
+            port=config["port"],
+            dbname=config["dbname"],
+            user=config["user"],
+            password=config["password"],
         )
 
         with conn:
@@ -63,20 +77,25 @@ def create_postgres_table(config: dict) -> bool:
                     );
                 """)
 
-                table_exists = cur.fetchone()[0]
+                result = cur.fetchone()
+                table_exists = result[0] if result else False
                 if table_exists:
-                    print("ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates...")
+                    print(
+                        "ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates..."
+                    )
 
                 # Create the circuit breaker table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
                         resource_key VARCHAR(255) NOT NULL,
+                        namespace VARCHAR(255) NOT NULL DEFAULT 'default',
                         state VARCHAR(20) NOT NULL CHECK (state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
                         failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0 AND failure_count <= 2147483647),
                         open_until TIMESTAMPTZ,
+                        execution_log JSONB,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        PRIMARY KEY (resource_key)
+                        PRIMARY KEY (resource_key, namespace)
                     );
                 """)
 
@@ -100,6 +119,11 @@ def create_postgres_table(config: dict) -> bool:
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_state_updated
                     ON rc_circuit_breakers (state, updated_at DESC);
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_namespace
+                    ON rc_circuit_breakers (namespace);
                 """)
 
                 # Create trigger function
@@ -148,19 +172,37 @@ def create_postgres_table(config: dict) -> bool:
                     'Number of consecutive failures since last reset';
                 """)
 
+                cur.execute("""
+                    COMMENT ON COLUMN rc_circuit_breakers.execution_log IS
+                    'JSON array of boolean success/failure results for the circular buffer';
+                """)
+
+                cur.execute("""
+                    COMMENT ON COLUMN rc_circuit_breakers.namespace IS
+                    'Namespace for circuit breaker isolation (e.g., test isolation)';
+                """)
+
                 conn.commit()
 
                 if table_exists:
-                    print(f"✅ Successfully updated table in database: {config['dbname']}")
+                    print(
+                        f"✅ Successfully updated table in database: {config['dbname']}"
+                    )
                 else:
-                    print(f"✅ Successfully created table in database: {config['dbname']}")
+                    print(
+                        f"✅ Successfully created table in database: {config['dbname']}"
+                    )
                 return True
 
     except psycopg.OperationalError as e:
         if "database" in str(e) and "does not exist" in str(e):
             print(f"❌ Error: Database '{config['dbname']}' does not exist.")
-            print("💡 Please create the database first or update your RC_DB_NAME in the .env file.")
-            print(f"   You can create it with: createdb -h {config['host']} -p {config['port']} -U {config['user']} {config['dbname']}")
+            print(
+                "💡 Please create the database first or update your RC_DB_NAME in the .env file."
+            )
+            print(
+                f"   You can create it with: createdb -h {config['host']} -p {config['port']} -U {config['user']} {config['dbname']}"
+            )
         else:
             print(f"❌ Database connection error: {e}")
         return False
@@ -185,19 +227,23 @@ def run_pg_setup(args: argparse.Namespace) -> int:
     print(f"   Database: {config['dbname']}")
     print(f"   User: {config['user']}")
 
-    if config['dbname'] == 'resilient_circuit_db':
+    if config["dbname"] == "resilient_circuit_db":
         print(f"\n⚠️  Note: Using default database name '{config['dbname']}'.")
         print("   You can customize this by setting RC_DB_NAME in your .env file.")
 
     if args.dry_run:
         print("\n📝 DRY RUN MODE - No changes will be made to the database")
-        print("This command would create the required tables and indexes in your PostgreSQL database.")
+        print(
+            "This command would create the required tables and indexes in your PostgreSQL database."
+        )
         return 0
 
     # Confirm before proceeding
     if not args.yes:
-        response = input(f"\n⚠️  This will create/update the circuit breaker table in '{config['dbname']}'. Continue? [y/N]: ")
-        if response.lower() not in ['y', 'yes']:
+        response = input(
+            f"\n⚠️  This will create/update the circuit breaker table in '{config['dbname']}'. Continue? [y/N]: "
+        )
+        if response.lower() not in ["y", "yes"]:
             print("❌ Setup cancelled by user.")
             return 1
 
@@ -208,15 +254,20 @@ def run_pg_setup(args: argparse.Namespace) -> int:
         print("\n✅ PostgreSQL setup completed successfully!")
         print("\n📋 The following have been created/updated:")
         print("   - Table: rc_circuit_breakers")
-        print("   - Primary key index: rc_circuit_breakers_pkey")
+        print(
+            "   - Primary key index: rc_circuit_breakers_pkey (resource_key, namespace)"
+        )
         print("   - Index: idx_rc_circuit_breakers_state")
         print("   - Index: idx_rc_circuit_breakers_open_until")
         print("   - Index: idx_rc_circuit_breakers_key_state")
         print("   - Index: idx_rc_circuit_breakers_state_updated")
+        print("   - Index: idx_rc_circuit_breakers_namespace")
         print("   - Trigger: update_rc_circuit_breakers_updated_at")
         print("   - Function: update_rc_circuit_breakers_updated_at_column")
 
-        print(f"\n💡 The database '{config['dbname']}' is now ready for use with Highway Circuit Breaker!")
+        print(
+            f"\n💡 The database '{config['dbname']}' is now ready for use with Highway Circuit Breaker!"
+        )
         return 0
     else:
         print("\n❌ PostgreSQL setup failed!")
@@ -226,35 +277,33 @@ def run_pg_setup(args: argparse.Namespace) -> int:
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        prog='highway-circutbreaker-cli',
-        description='Highway Circuit Breaker CLI tools'
+        prog="highway-circutbreaker-cli",
+        description="Highway Circuit Breaker CLI tools",
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # PostgreSQL setup command
     pg_setup_parser = subparsers.add_parser(
-        'pg-setup',
-        help='Setup PostgreSQL table for circuit breaker state storage'
+        "pg-setup", help="Setup PostgreSQL table for circuit breaker state storage"
     )
     pg_setup_parser.add_argument(
-        '--yes',
-        action='store_true',
-        help='Skip confirmation prompt'
+        "--yes", action="store_true", help="Skip confirmation prompt"
     )
     pg_setup_parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be done without making changes'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes",
     )
 
     args = parser.parse_args()
 
-    if args.command == 'pg-setup':
+    if args.command == "pg-setup":
         return run_pg_setup(args)
     else:
         parser.print_help()
         return 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())

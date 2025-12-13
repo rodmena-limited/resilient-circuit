@@ -6,59 +6,59 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath(".."))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Resilient Circuit'
-copyright = '2025, Resilient Circuit Contributors'
-author = 'Resilient Circuit Team'
-release = '0.3.0'
-version = '0.3.0'
+project = "Resilient Circuit"
+copyright = "2025, Resilient Circuit Contributors"
+author = "Resilient Circuit Team"
+release = "0.3.0"
+version = "0.3.0"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.coverage',
-    'sphinx.ext.todo',
-    'sphinx_rtd_theme',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.coverage",
+    "sphinx.ext.todo",
+    "sphinx_rtd_theme",
 ]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # The suffix of source filenames
 source_suffix = {
-    '.rst': 'restructuredtext',
+    ".rst": "restructuredtext",
 }
 
 # The master toctree document
-master_doc = 'index'
+master_doc = "index"
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'
-html_static_path = ['_static']
+html_theme = "sphinx_rtd_theme"
+html_static_path = ["_static"]
 
 # Theme options
 html_theme_options = {
-    'display_version': True,
-    'prev_next_buttons_location': 'bottom',
-    'style_external_links': False,
-    'navigation_depth': 4,
+    "display_version": True,
+    "prev_next_buttons_location": "bottom",
+    "style_external_links": False,
+    "navigation_depth": 4,
     # Toc options
-    'collapse_navigation': False,
-    'sticky_navigation': True,
-    'includehidden': True,
-    'titles_only': False
+    "collapse_navigation": False,
+    "sticky_navigation": True,
+    "includehidden": True,
+    "titles_only": False,
 }
 
 # Add logo and favicon (if you have them)
@@ -69,15 +69,15 @@ html_theme_options = {
 
 # Autodoc settings
 autodoc_default_options = {
-    'members': True,
-    'member-order': 'bysource',
-    'special-members': '__init__',
-    'undoc-members': True,
-    'exclude-members': '__weakref__'
+    "members": True,
+    "member-order": "bysource",
+    "special-members": "__init__",
+    "undoc-members": True,
+    "exclude-members": "__weakref__",
 }
 
-autodoc_typehints = 'description'
-autodoc_class_signature = 'separated'
+autodoc_typehints = "description"
+autodoc_class_signature = "separated"
 
 # Napoleon settings for Google and NumPy style docstrings
 napoleon_google_docstring = True
@@ -97,8 +97,8 @@ napoleon_attr_annotations = True
 
 # Intersphinx mapping
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3/', None),
-    'psycopg': ('https://www.psycopg.org/psycopg3/docs/', None),
+    "python": ("https://docs.python.org/3/", None),
+    "psycopg": ("https://www.psycopg.org/psycopg3/docs/", None),
 }
 
 # Autosummary settings
