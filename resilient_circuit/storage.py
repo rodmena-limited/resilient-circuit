@@ -14,7 +14,6 @@ except ImportError:
 
 try:
     import psycopg
-    from psycopg import Connection
 
     HAS_PSYCOPG = True
 except ImportError:
@@ -93,7 +92,7 @@ class PostgresStorage(CircuitBreakerStorage):
         self.namespace = namespace
         self._ensure_table_exists()
 
-    def _get_connection(self) -> Connection:
+    def _get_connection(self) -> "psycopg.Connection":
         """Get a database connection."""
         return psycopg.connect(self.connection_string)
 
