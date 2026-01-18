@@ -206,11 +206,32 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 self._save_state()  # Persist state after exception
                 raise
             else:
-                logger.warning(
-                    f"✅ CB {self.resource_key}: Success, calling mark_success()"
-                )
-                self._status.mark_success()
-                self._save_state()  # Persist state after success
+                # Check if result is ExecutionResult from bulkhead
+                if hasattr(result, 'success') and hasattr(result, 'error'):
+                    if result.success:
+                        logger.warning(f"✅ CB {self.resource_key}: Success")
+                        self._status.mark_success()
+                    else:
+                        should_fail = (
+                            self.should_consider_failure(result.error)
+                            if result.error else True
+                        )
+                        if should_fail:
+                            logger.warning(
+                                f"❌ CB {self.resource_key}: Failure "
+                                f"(ExecutionResult.success=False)"
+                            )
+                            self._status.mark_failure()
+                        else:
+                            logger.warning(
+                                f"✅ CB {self.resource_key}: Exception ignored"
+                            )
+                            self._status.mark_success()
+                else:
+                    # Normal case - no exception, not ExecutionResult
+                    logger.warning(f"✅ CB {self.resource_key}: Success")
+                    self._status.mark_success()
+                self._save_state()
                 return result
 
         return decorated
