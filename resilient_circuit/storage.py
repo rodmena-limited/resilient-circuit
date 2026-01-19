@@ -185,9 +185,6 @@ class PostgresStorage(CircuitBreakerStorage):
                     """)
 
                     conn.commit()
-                    logger.info(
-                        f"PostgreSQL circuit breaker table ensured (namespace={self.namespace})"
-                    )
         except Exception as e:
             logger.error(f"Failed to ensure table exists: {e}")
             raise
@@ -339,18 +336,10 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
         # PostgreSQL storage requested
         connection_string = f"host={db_host} port={db_port} dbname={db_name} user={db_user} password={db_password}"
         try:
-            storage = PostgresStorage(connection_string, namespace=namespace)
-            logger.info(
-                f"Using PostgreSQL storage for circuit breaker: host={db_host}, db={db_name}, namespace={namespace}"
-            )
-            return storage
+            return PostgresStorage(connection_string, namespace=namespace)
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL storage: {e}")
-            logger.warning("Falling back to in-memory storage")
             return InMemoryStorage()
     else:
         # Default to in-memory storage
-        logger.info(
-            f"Using in-memory storage for circuit breaker (no PostgreSQL config found), namespace={namespace}"
-        )
         return InMemoryStorage()

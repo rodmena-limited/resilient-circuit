@@ -182,26 +182,14 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
-            import logging
-
-            logger = logging.getLogger(__name__)
-
             self._status.validate_execution()
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
                 should_fail = self.should_consider_failure(e)
-                logger.warning(
-                    f"🚨 CB {self.resource_key}: Exception {type(e).__name__}: {e}, "
-                    f"should_consider_failure={should_fail}"
-                )
                 if should_fail:
-                    logger.warning(f"❌ CB {self.resource_key}: Calling mark_failure()")
                     self._status.mark_failure()
                 else:
-                    logger.warning(
-                        f"✅ CB {self.resource_key}: Exception ignored, calling mark_success()"
-                    )
                     self._status.mark_success()
                 self._save_state()  # Persist state after exception
                 raise
@@ -209,7 +197,6 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                 # Check if result is ExecutionResult from bulkhead
                 if hasattr(result, 'success') and hasattr(result, 'error'):
                     if result.success:
-                        logger.warning(f"✅ CB {self.resource_key}: Success")
                         self._status.mark_success()
                     else:
                         should_fail = (
@@ -217,19 +204,11 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                             if result.error else True
                         )
                         if should_fail:
-                            logger.warning(
-                                f"❌ CB {self.resource_key}: Failure "
-                                f"(ExecutionResult.success=False)"
-                            )
                             self._status.mark_failure()
                         else:
-                            logger.warning(
-                                f"✅ CB {self.resource_key}: Exception ignored"
-                            )
                             self._status.mark_success()
                 else:
                     # Normal case - no exception, not ExecutionResult
-                    logger.warning(f"✅ CB {self.resource_key}: Success")
                     self._status.mark_success()
                 self._save_state()
                 return result
@@ -277,35 +256,18 @@ class StatusClosed(CircuitStatusBase):
         pass
 
     def mark_failure(self) -> None:
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         self.failure_count += 1  # Increment failure count
         self.execution_log.add(False)
-
-        logger.warning(
-            f"📊 CB {self.policy.resource_key} mark_failure: "
-            f"buffer={list(self.execution_log._items)}, "
-            f"is_full={self.execution_log.is_full}, "
-            f"size={self.execution_log.size}, "
-            f"failure_rate={self.execution_log.failure_rate}, "
-            f"threshold={self.policy.failure_limit}"
-        )
 
         if (
             self.execution_log.is_full
             and self.execution_log.failure_rate >= self.policy.failure_limit
         ):
-            logger.warning(f"🔴 CB {self.policy.resource_key}: Opening circuit!")
             try:
                 self.policy.status = CircuitStatus.OPEN
-                logger.warning(
-                    f"✅ CB {self.policy.resource_key}: Successfully set status to OPEN"
-                )
             except Exception as e:
                 logger.error(
-                    f"❌ CB {self.policy.resource_key}: Failed to set status to OPEN: {type(e).__name__}: {e}",
+                    f"CB {self.policy.resource_key}: Failed to set status to OPEN: {type(e).__name__}: {e}",
                     exc_info=True,
                 )
 
