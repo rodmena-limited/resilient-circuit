@@ -1,6 +1,54 @@
 # Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-08-06
+
+### Fixed
+- **Cross-process write race in PostgresStorage** (reported by the bulkman audit):
+  the load → decide → save cycle was last-writer-wins across processes, so a
+  process holding a stale local CLOSED could clobber a stored OPEN and silently
+  erase the protection signal, and two simultaneous openers raced on
+  `open_until`. `get_state()`'s `SELECT ... FOR UPDATE` only ever locked the row
+  for the lifetime of its own connection, so it provided no atomicity at all.
+
+### Added
+- `CircuitBreakerStorage.update_state(resource_key, mutator)`: atomic
+  read-modify-write. PostgresStorage runs load → mutate → persist on one
+  connection in one transaction, holding a per-key advisory transaction lock
+  (`pg_advisory_xact_lock`) plus `SELECT ... FOR UPDATE`, so concurrent cycles
+  serialize even when the row does not exist yet. InMemoryStorage does the same
+  under a process-local lock. The base class provides a non-atomic fallback for
+  third-party backends.
+- Live multiprocess reproduction probe `audit/evaluations/probe_write_race.py`
+  (red against 0.4.4, green against 0.5.0) plus in-process regression tests
+  (`tests/test_storage_atomicity.py`).
+
+### Changed
+- **`set_state()` now returns `bool` and refuses stale writes**: when the stored
+  state is OPEN with an unexpired `open_until`, a blind write is refused
+  (returns `False`) — a stale CLOSED/HALF_OPEN can no longer erase a live
+  protection signal, and a later opener can no longer move the stored cooldown
+  end (first opener wins). Once `open_until` expires, all writes are accepted
+  again, so recovery (OPEN → HALF_OPEN → CLOSED) is never blocked. Deliberate
+  overrides (administrative reset) go through `update_state()`, which writes
+  unguarded because its mutator saw the current state.
+- `CircuitProtectorPolicy` adopts the stored state when its own write is
+  refused: a process whose stale success write is rejected reloads the stored
+  OPEN and starts rejecting calls itself instead of continuing to hammer the
+  failing dependency.
+- `get_state()` no longer issues `FOR UPDATE` (the lock died with the method's
+  own connection; the docstring claiming atomicity was false) and
+  InMemoryStorage now returns defensive copies instead of aliases of its
+  internal state.
+
+### Known limitations
+- Distributed admission is still local between saves: a process that never
+  writes never refreshes its view of a peer's OPEN (tracked as ticket #2; the
+  refused-write adoption above narrows but does not close this).
+- The schema stores naive local-time timestamps; the guard compares against the
+  writer's clock, so cross-host clock skew remains a pre-existing property of
+  the schema.
+
 ## [0.4.0] - 2025-11-21
 
 ### Added

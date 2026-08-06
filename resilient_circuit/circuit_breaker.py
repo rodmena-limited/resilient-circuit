@@ -59,48 +59,51 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         # Load state from storage
         self._load_state()
 
+    def _apply_stored(self, state_data: dict) -> None:
+        """Rebuild the local status object from a stored state dict."""
+        state = CircuitStatus(state_data["state"])
+        failure_count = int(state_data.get("failure_count", 0))
+        open_until = float(state_data.get("open_until", 0))
+        execution_log_data = state_data.get("execution_log")
+
+        # Initialize status based on stored state
+        status: CircuitStatusBase
+        if state == CircuitStatus.CLOSED:
+            status = StatusClosed(policy=self, failure_count=failure_count)
+        elif state == CircuitStatus.OPEN:
+            # For OPEN state, we need a previous status to pass to the constructor
+            # We'll use a temporary closed status with same failure count
+            temp_status = StatusClosed(policy=self, failure_count=failure_count)
+            status = StatusOpen(
+                policy=self, previous_status=temp_status, open_until=open_until
+            )
+        else:  # HALF_OPEN
+            status = StatusHalfOpen(policy=self, failure_count=failure_count)
+
+        # Restore execution_log buffer if available
+        if execution_log_data and isinstance(execution_log_data, list):
+            if hasattr(status, "execution_log") and hasattr(
+                status.execution_log, "_items"
+            ):
+                # Restore buffer maintaining size limit
+                status.execution_log._items = execution_log_data[
+                    -status.execution_log.size :
+                ]
+                logger.debug(
+                    f"Restored buffer for {self.resource_key}: {len(status.execution_log._items)} entries"
+                )
+
+        self._status = status
+        logger.debug(
+            f"Loaded circuit breaker state for {self.resource_key}: {state.value}"
+        )
+
     def _load_state(self) -> None:
         """Load circuit breaker state from storage including execution log buffer."""
         try:
             state_data = self.storage.get_state(self.resource_key)
             if state_data:
-                # Restore state from storage
-                state = CircuitStatus(state_data["state"])
-                failure_count = int(state_data.get("failure_count", 0))
-                open_until = float(state_data.get("open_until", 0))
-                execution_log_data = state_data.get("execution_log")
-
-                # Initialize status based on stored state
-                status: CircuitStatusBase
-                if state == CircuitStatus.CLOSED:
-                    status = StatusClosed(policy=self, failure_count=failure_count)
-                elif state == CircuitStatus.OPEN:
-                    # For OPEN state, we need a previous status to pass to the constructor
-                    # We'll use a temporary closed status with same failure count
-                    temp_status = StatusClosed(policy=self, failure_count=failure_count)
-                    status = StatusOpen(
-                        policy=self, previous_status=temp_status, open_until=open_until
-                    )
-                else:  # HALF_OPEN
-                    status = StatusHalfOpen(policy=self, failure_count=failure_count)
-
-                # Restore execution_log buffer if available
-                if execution_log_data and isinstance(execution_log_data, list):
-                    if hasattr(status, "execution_log") and hasattr(
-                        status.execution_log, "_items"
-                    ):
-                        # Restore buffer maintaining size limit
-                        status.execution_log._items = execution_log_data[
-                            -status.execution_log.size :
-                        ]
-                        logger.debug(
-                            f"Restored buffer for {self.resource_key}: {len(status.execution_log._items)} entries"
-                        )
-
-                self._status = status
-                logger.debug(
-                    f"Loaded circuit breaker state for {self.resource_key}: {state.value}"
-                )
+                self._apply_stored(state_data)
             else:
                 # No state found, start with CLOSED
                 self._status = StatusClosed(policy=self)
@@ -131,13 +134,33 @@ class CircuitProtectorPolicy(ProtectionPolicy):
             ):
                 execution_log_data = list(self._status.execution_log._items)
 
-            self.storage.set_state(
+            applied = self.storage.set_state(
                 self.resource_key,
                 state_value,
                 failure_count_val,
                 open_until_val,
                 execution_log=execution_log_data,
             )
+            if applied is False:
+                # The stored circuit is OPEN with an unexpired cooldown and
+                # this process's view is stale. Adopt the shared protection
+                # signal instead of clobbering it.
+                logger.warning(
+                    f"State write refused for {self.resource_key}: stored circuit "
+                    f"is OPEN with unexpired cooldown (local wanted {state_value}); "
+                    f"adopting stored state"
+                )
+                try:
+                    stored = self.storage.get_state(self.resource_key)
+                except Exception as reload_error:
+                    logger.error(
+                        f"Failed to reload stored state for {self.resource_key} "
+                        f"after refused write: {reload_error}"
+                    )
+                    stored = None
+                if stored:
+                    self._apply_stored(stored)
+                return
             logger.debug(
                 f"Saved circuit breaker state for {self.resource_key}: {state_value}, buffer_size={len(execution_log_data) if execution_log_data else 0}"
             )
