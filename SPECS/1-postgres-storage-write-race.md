@@ -35,12 +35,12 @@ erasing the protection signal. Two simultaneous openers also race on `open_until
   `open_until`) shall exist as a runnable probe under `audit/evaluations/`, shown RED
   against pre-fix code and GREEN after the fix.
 
-## Out of scope (tracked as ticket #2)
+## Out of scope here — resolved by ticket #2 (same 0.5.0 release)
 
-Per-call distributed admission: the policy evaluates admission against locally cached state
-between saves, so a process that never writes never learns of a peer's OPEN. Ticket #1 only
-narrows this (adoption on refused write); the full fix is a per-call refresh / TTL-cached
-read design decision.
+Per-call distributed admission: the policy evaluated admission against locally cached state
+between saves, so a process that never wrote never learned of a peer's OPEN. Ticket #1 only
+narrowed this (adoption on refused write); ticket #2 closed it with a pre-admission refresh
+— see `SPECS/2-distributed-admission.md`.
 
 ## Notes
 

@@ -45,7 +45,16 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         on_status_change: Optional[
             Callable[["CircuitProtectorPolicy", CircuitStatus, CircuitStatus], None]
         ] = None,
+        admission_refresh_interval: Optional[timedelta] = None,
     ) -> None:
+        """
+        Args:
+            admission_refresh_interval: How often to re-read shared storage
+                before admitting a protected call. None (default) refreshes on
+                every call, so a peer process's OPEN is honored immediately.
+                Set an interval to throttle storage reads on hot paths; between
+                refreshes admission uses the local view.
+        """
         # Generate a default resource key if not provided for backward compatibility
         self.resource_key = resource_key or f"anonymous_{id(self)}"
         # Create storage with namespace support if not provided
@@ -55,6 +64,8 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         self.failure_limit = failure_limit
         self.should_consider_failure = should_handle
         self._on_status_change = on_status_change
+        self.admission_refresh_interval = admission_refresh_interval
+        self._last_refresh_monotonic: Optional[float] = None
 
         # Load state from storage
         self._load_state()
@@ -97,6 +108,41 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         logger.debug(
             f"Loaded circuit breaker state for {self.resource_key}: {state.value}"
         )
+
+    def _adopt_stored(self, state_data: dict) -> None:
+        """Adopt a stored state, firing on_status_change if the status differs."""
+        old = self._status.status_type
+        self._apply_stored(state_data)
+        new = self._status.status_type
+        if new is not old:
+            self.on_status_change(old, new)
+
+    def _refresh_before_admission(self) -> None:
+        """Re-read shared storage so admission honors a peer's transitions.
+
+        Runs before every protected call (throttled by
+        admission_refresh_interval when set). On a storage read failure the
+        local view is kept: a storage outage must not take down the caller.
+        """
+        if self.admission_refresh_interval is not None:
+            now = time.monotonic()
+            if (
+                self._last_refresh_monotonic is not None
+                and now - self._last_refresh_monotonic
+                < self.admission_refresh_interval.total_seconds()
+            ):
+                return
+            self._last_refresh_monotonic = now
+        try:
+            stored = self.storage.get_state(self.resource_key)
+        except Exception as e:
+            logger.error(
+                f"Failed to refresh state for {self.resource_key} before "
+                f"admission: {e}; using local view"
+            )
+            return
+        if stored:
+            self._adopt_stored(stored)
 
     def _load_state(self) -> None:
         """Load circuit breaker state from storage including execution log buffer."""
@@ -159,7 +205,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
                     )
                     stored = None
                 if stored:
-                    self._apply_stored(stored)
+                    self._adopt_stored(stored)
                 return
             logger.debug(
                 f"Saved circuit breaker state for {self.resource_key}: {state_value}, buffer_size={len(execution_log_data) if execution_log_data else 0}"
@@ -205,6 +251,7 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
+            self._refresh_before_admission()
             self._status.validate_execution()
             try:
                 result = func(*args, **kwargs)

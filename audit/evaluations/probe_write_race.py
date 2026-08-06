@@ -61,7 +61,13 @@ def make_policy(namespace, key, cooldown_s=60.0):
 
 
 def trip_open(policy):
-    """Drive one failing protected call so the breaker opens."""
+    """Drive one failing protected call so the breaker opens.
+
+    Since the distributed-admission fix (ticket #2), a breaker that refreshes
+    into a peer's live OPEN rejects the call at admission instead of executing
+    it — that is also a valid way for this circuit to end up OPEN locally.
+    """
+    from resilient_circuit.exceptions import ProtectedCallError
 
     @policy
     def failing():
@@ -69,7 +75,7 @@ def trip_open(policy):
 
     try:
         failing()
-    except ValueError:
+    except (ValueError, ProtectedCallError):
         pass
 
 

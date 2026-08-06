@@ -4,6 +4,7 @@ import os
 import threading
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
 try:
@@ -317,10 +318,15 @@ class PostgresStorage(CircuitBreakerStorage):
 
     @staticmethod
     def _to_pg_timestamp(epoch: float) -> Optional[str]:
-        """Format an epoch as the naive local-time string this schema stores."""
+        """Format an epoch as the naive local-time string this schema stores.
+
+        Microseconds are preserved: sub-second cooldowns must survive the
+        round-trip, or a peer refreshing its view would adopt an already
+        "expired" open_until.
+        """
         if epoch <= 0:
             return None
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(epoch))
+        return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     _STATE_SELECT = (
         "SELECT state, failure_count, open_until, execution_log "

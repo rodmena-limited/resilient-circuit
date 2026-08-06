@@ -157,22 +157,43 @@ class TestPostgresGuardContract(GuardContractMixin):
 
 
 class TestBreakerAdoptsStoredProtectionSignal:
-    """A breaker whose refused write reveals a live stored OPEN must adopt it."""
+    """A breaker whose refused write reveals a live stored OPEN must adopt it.
 
-    def _policy(self, storage, key="shared-dep"):
+    Since ticket #2 a breaker refreshes shared state before admission, so a
+    stale process normally never gets to write at all. The refused-write
+    adoption remains as defense-in-depth for the throttled-refresh window
+    (admission_refresh_interval); these tests pin it down through exactly
+    that window.
+    """
+
+    def _policy(self, storage, key="shared-dep", cooldown=timedelta(seconds=60)):
         return CircuitProtectorPolicy(
             resource_key=key,
             storage=storage,
-            cooldown=timedelta(seconds=60),
+            cooldown=cooldown,
             failure_limit=Fraction(1, 1),
+            # a refresh window so large it never re-fires during the test:
+            # admission uses B's stale local view, as pre-ticket-2 code did
+            admission_refresh_interval=timedelta(hours=1),
         )
 
     def test_stale_success_does_not_clobber_open_and_process_adopts_it(self):
         storage = InMemoryStorage()
-        # B constructed first: local view is CLOSED
         policy_b = self._policy(storage)
-        # A trips the circuit OPEN
-        policy_a = self._policy(storage)
+
+        @policy_b
+        def ok():
+            return "ok"
+
+        assert ok() == "ok"  # starts B's refresh window; persists CLOSED
+
+        # A trips the circuit OPEN out-of-band
+        policy_a = CircuitProtectorPolicy(
+            resource_key="shared-dep",
+            storage=storage,
+            cooldown=timedelta(seconds=60),
+            failure_limit=Fraction(1, 1),
+        )
 
         @policy_a
         def failing():
@@ -183,15 +204,12 @@ class TestBreakerAdoptsStoredProtectionSignal:
         assert policy_a.status == CircuitStatus.OPEN
         assert storage.get_state("shared-dep")["state"] == "OPEN"
 
-        # B, still locally CLOSED, records a success and blindly persists
-        @policy_b
-        def ok():
-            return "ok"
-
-        assert ok() == "ok"  # this call was already admitted by stale B
-        # ... but the stored protection signal survived
+        # B, inside its refresh window with a stale CLOSED view, records a
+        # success and blindly persists
+        assert ok() == "ok"  # admitted from B's throttled local view
+        # ... but the stored protection signal survived the blind write
         assert storage.get_state("shared-dep")["state"] == "OPEN"
-        # ... and B adopted it: the next call is rejected
+        # ... and B adopted it via the refused write: the next call is rejected
         assert policy_b.status == CircuitStatus.OPEN
         with pytest.raises(ProtectedCallError):
             ok()
@@ -199,11 +217,19 @@ class TestBreakerAdoptsStoredProtectionSignal:
     def test_adopted_open_still_recovers_after_cooldown(self):
         """Both directions: adoption must not wedge the circuit permanently."""
         storage = InMemoryStorage()
-        policy_b = self._policy(storage, key="recover-dep")
+        cooldown = timedelta(milliseconds=100)
+        policy_b = self._policy(storage, key="recover-dep", cooldown=cooldown)
+
+        @policy_b
+        def ok():
+            return "ok"
+
+        assert ok() == "ok"  # starts B's refresh window
+
         policy_a = CircuitProtectorPolicy(
             resource_key="recover-dep",
             storage=storage,
-            cooldown=timedelta(milliseconds=100),
+            cooldown=cooldown,
             failure_limit=Fraction(1, 1),
         )
 
@@ -213,10 +239,6 @@ class TestBreakerAdoptsStoredProtectionSignal:
 
         with pytest.raises(ValueError):
             failing()
-
-        @policy_b
-        def ok():
-            return "ok"
 
         ok()  # stale success -> refused write -> B adopts OPEN
         assert policy_b.status == CircuitStatus.OPEN

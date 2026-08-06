@@ -19,9 +19,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   serialize even when the row does not exist yet. InMemoryStorage does the same
   under a process-local lock. The base class provides a non-atomic fallback for
   third-party backends.
-- Live multiprocess reproduction probe `audit/evaluations/probe_write_race.py`
-  (red against 0.4.4, green against 0.5.0) plus in-process regression tests
-  (`tests/test_storage_atomicity.py`).
+- Live multiprocess reproduction probes `audit/evaluations/probe_write_race.py`
+  and `audit/evaluations/probe_distributed_admission.py` (each shown red
+  against the pre-fix code, green against 0.5.0) plus in-process regression
+  tests (`tests/test_storage_atomicity.py`,
+  `tests/test_distributed_admission.py`).
+- **Distributed admission**: `CircuitProtectorPolicy` now refreshes its view
+  from shared storage before admitting each protected call, so a process
+  honors a peer's OPEN immediately — the failing dependency is not hit even
+  once by processes that never observed a failure themselves. New
+  `admission_refresh_interval: timedelta` parameter throttles the refresh on
+  hot paths (between refreshes admission uses the local view); default is
+  refresh-on-every-call. On a storage read failure the local view is kept
+  (fail-open) — a storage outage never takes down the caller.
 
 ### Changed
 - **`set_state()` now returns `bool` and refuses stale writes**: when the stored
@@ -40,11 +50,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own connection; the docstring claiming atomicity was false) and
   InMemoryStorage now returns defensive copies instead of aliases of its
   internal state.
+- `open_until` is now stored with microsecond precision (was truncated to
+  whole seconds); sub-second cooldowns survive the storage round-trip, which
+  matters now that peers adopt each other's stored `open_until`.
+- `on_status_change` now also fires when a breaker adopts a peer's stored
+  state with a different status (via the pre-admission refresh or a refused
+  write), not only on locally driven transitions.
 
 ### Known limitations
-- Distributed admission is still local between saves: a process that never
-  writes never refreshes its view of a peer's OPEN (tracked as ticket #2; the
-  refused-write adoption above narrows but does not close this).
+- Admission is point-in-time: a peer opening the circuit between the refresh
+  and the protected call's execution is inherent TOCTOU.
+- Concurrent execution-log buffers are last-writer-wins, not merged; failure
+  evidence recorded by two processes between each other's saves can be lost
+  (protection-state transitions themselves are guarded, as above).
 - The schema stores naive local-time timestamps; the guard compares against the
   writer's clock, so cross-host clock skew remains a pre-existing property of
   the schema.
