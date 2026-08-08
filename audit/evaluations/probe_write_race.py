@@ -95,12 +95,13 @@ def succeed_once(policy):
 
 # ---------------------------------------------------------------- S1 children
 
+
 def s1_child_b(ns, key, b_constructed, a_done, out):
     logging.disable(logging.CRITICAL)
     policy = make_policy(ns, key)  # no stored row yet -> local CLOSED
     b_constructed.set()
     a_done.wait(timeout=30)
-    first = succeed_once(policy)   # stale local CLOSED -> blind persist (the clobber)
+    first = succeed_once(policy)  # stale local CLOSED -> blind persist (the clobber)
     second = succeed_once(policy)  # post-fix: must be rejected (adopted stored OPEN)
     out.put(("b", first, second))
 
@@ -109,12 +110,15 @@ def s1_child_a(ns, key, b_constructed, a_done, out):
     logging.disable(logging.CRITICAL)
     b_constructed.wait(timeout=30)
     policy = make_policy(ns, key)
-    trip_open(policy)              # persists OPEN, open_until = now + 60s
-    out.put(("a", policy.status.value, getattr(policy._status, "open_until_timestamp", 0)))
+    trip_open(policy)  # persists OPEN, open_until = now + 60s
+    out.put(
+        ("a", policy.status.value, getattr(policy._status, "open_until_timestamp", 0))
+    )
     a_done.set()
 
 
 # ---------------------------------------------------------------- S2 children
+
 
 def s2_child(ns, key, delay_s, out, tag):
     logging.disable(logging.CRITICAL)
@@ -129,11 +133,13 @@ def s2_child(ns, key, delay_s, out, tag):
 
 # ---------------------------------------------------------------- S4 children
 
+
 def s4_child(ns, key, rounds, out):
     logging.disable(logging.CRITICAL)
     storage = make_storage(ns)
     applied = 0
     for _ in range(rounds):
+
         def bump(current):
             cur = current or {"state": "CLOSED", "failure_count": 0, "open_until": 0}
             return {
@@ -159,8 +165,10 @@ def run_scenarios():
     b_constructed, a_done = mp.Event(), mp.Event()
     pb = mp.Process(target=s1_child_b, args=(ns, key, b_constructed, a_done, q))
     pa = mp.Process(target=s1_child_a, args=(ns, key, b_constructed, a_done, q))
-    pb.start(); pa.start()
-    pb.join(60); pa.join(60)
+    pb.start()
+    pa.start()
+    pb.join(60)
+    pa.join(60)
     msgs = {}
     while not q.empty():
         m = q.get()
@@ -183,8 +191,10 @@ def run_scenarios():
     q = mp.Queue()
     p1 = mp.Process(target=s2_child, args=(ns, key, 0.0, q, "first"))
     p2 = mp.Process(target=s2_child, args=(ns, key, 3.0, q, "second"))
-    p1.start(); p2.start()
-    p1.join(60); p2.join(60)
+    p1.start()
+    p2.start()
+    p1.join(60)
+    p2.join(60)
     opens = {}
     while not q.empty():
         tag, intended, local_after = q.get()
@@ -219,9 +229,11 @@ def run_scenarios():
     outcome = succeed_once(policy)  # OPEN -> HALF_OPEN -> CLOSED
     stored = parent_storage.get_state(key)
     s3_ok = (
-        mid is not None and mid["state"] == "OPEN"
+        mid is not None
+        and mid["state"] == "OPEN"
         and outcome == "admitted"
-        and stored is not None and stored["state"] == "CLOSED"
+        and stored is not None
+        and stored["state"] == "CLOSED"
     )
     results["S3 recovery after expiry (guard must not block)"] = (
         s3_ok,
@@ -268,7 +280,8 @@ def main():
     try:
         import psycopg  # noqa: F401
     except ImportError:
-        print("ABORT: psycopg not installed"); return 2
+        print("ABORT: psycopg not installed")
+        return 2
     try:
         results = run_scenarios()
     except Exception as e:

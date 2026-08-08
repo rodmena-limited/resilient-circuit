@@ -126,28 +126,42 @@ CLI Options
 Database Schema
 ---------------
 
+The table is created and kept up to date automatically by the library (once
+per process) or via ``resilient-circuit-cli pg-setup``; both use the same
+single schema definition, so they cannot drift apart. The runtime migrator
+upgrades legacy tables in place: it adds the ``namespace`` and
+``execution_log`` columns, replaces a single-column ``resource_key`` primary
+key with the composite ``(resource_key, namespace)`` key, and converts a
+naive ``TIMESTAMP`` ``open_until`` to timezone-aware ``TIMESTAMPTZ``.
+
 Table Structure
 ~~~~~~~~~~~~~~~
 
 .. code-block:: sql
 
     CREATE TABLE rc_circuit_breakers (
-        resource_key VARCHAR(255) PRIMARY KEY,
+        resource_key VARCHAR(255) NOT NULL,
         state VARCHAR(50) NOT NULL,
         failure_count INTEGER NOT NULL DEFAULT 0,
-        open_until TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        open_until TIMESTAMPTZ,
+        execution_log JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        namespace VARCHAR(255) NOT NULL DEFAULT 'default',
+        PRIMARY KEY (resource_key, namespace)
     );
+
+``open_until`` is written as explicit UTC, so the stored cooldown instant is
+independent of the writer's and the session's timezone and survives the
+round-trip with microsecond precision (sub-second cooldowns work).
 
 Indexes
 ~~~~~~~
 
-* ``rc_circuit_breakers_pkey`` - Primary key on resource_key
+* ``rc_circuit_breakers_pkey`` - Primary key on (resource_key, namespace)
 * ``idx_rc_circuit_breakers_state`` - Index on state column
-* ``idx_rc_circuit_breakers_open_until`` - Index on open_until timestamp
-* ``idx_rc_circuit_breakers_key_state`` - Composite index on (resource_key, state)
-* ``idx_rc_circuit_breakers_state_updated`` - Index on (state, updated_at DESC)
+* ``idx_rc_circuit_breakers_namespace`` - Index on namespace column
+* ``idx_rc_circuit_breakers_key_namespace`` - Index on (resource_key, namespace)
 
 Usage
 -----
@@ -278,7 +292,16 @@ Resilient Circuit automatically falls back to in-memory storage if:
         resource_key="my_service"
     )
 
-The fallback is transparent and logged appropriately.
+When PostgreSQL was requested (``RC_DB_*`` set) but is unavailable, the
+fallback emits a ``RuntimeWarning`` — a distributed deployment must never
+degrade to per-process isolation invisibly. Check ``storage.backend_name``
+(``"postgres"`` vs ``"in-memory"``) to confirm the effective backend.
+
+Retiring a circuit: use ``storage.delete_state(resource_key)`` to remove a
+stored circuit (for example an OPEN that will never recover because the
+dependency is gone). ``InMemoryStorage`` keeps at most ``max_entries`` keys
+(default 8192), evicting the least-recently-used entry that is not a live
+OPEN — a live protection signal is never dropped.
 
 Performance Considerations
 --------------------------

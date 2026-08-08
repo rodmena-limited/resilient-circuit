@@ -22,14 +22,15 @@ from fractions import Fraction
 from resilient_circuit import CircuitProtectorPolicy
 
 service_protector = CircuitProtectorPolicy(
-    cooldown=timedelta(seconds=30),
-    failure_limit=Fraction(2, 5)
+    cooldown=timedelta(seconds=30), failure_limit=Fraction(2, 5)
 )
+
 
 @service_protector
 def call_external_service(data):
     # Your actual service call
     import requests
+
     response = requests.post("https://external-service/api", json=data)
     response.raise_for_status()
     return response.json()
@@ -46,15 +47,15 @@ from resilient_circuit import RetryWithBackoffPolicy, ExponentialDelay
 service_retry = RetryWithBackoffPolicy(
     max_retries=3,
     backoff=ExponentialDelay(
-        min_delay=timedelta(seconds=1),
-        max_delay=timedelta(seconds=10),
-        factor=2
-    )
+        min_delay=timedelta(seconds=1), max_delay=timedelta(seconds=10), factor=2
+    ),
 )
+
 
 @service_retry
 def call_retryable_service(data):
     import requests
+
     response = requests.post("https://flaky-service/api", json=data)
     response.raise_for_status()
     return response.json()
@@ -73,12 +74,13 @@ from resilient_circuit import CircuitProtectorPolicy
 db_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
     failure_limit=Fraction(1, 5),
-    should_handle=lambda e: isinstance(e, sqlite3.OperationalError)
+    should_handle=lambda e: isinstance(e, sqlite3.OperationalError),
 )
+
 
 @db_protector
 def get_user_data(user_id):
-    conn = sqlite3.connect('mydb.db')
+    conn = sqlite3.connect("mydb.db")
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     result = cursor.fetchone()
@@ -94,12 +96,15 @@ from resilient_circuit import RetryWithBackoffPolicy
 
 db_retry = RetryWithBackoffPolicy(
     max_retries=2,
-    should_handle=lambda e: isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError))
+    should_handle=lambda e: isinstance(
+        e, (sqlite3.OperationalError, sqlite3.DatabaseError)
+    ),
 )
+
 
 @db_retry
 def update_user_data(user_id, data):
-    conn = sqlite3.connect('mydb.db')
+    conn = sqlite3.connect("mydb.db")
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET data = ? WHERE id = ?", (data, user_id))
     conn.commit()
@@ -122,28 +127,28 @@ api_safetynet = SafetyNet(
         RetryWithBackoffPolicy(
             max_retries=2,
             backoff=ExponentialDelay(
-                min_delay=timedelta(seconds=1),
-                max_delay=timedelta(seconds=5),
-                factor=2
+                min_delay=timedelta(seconds=1), max_delay=timedelta(seconds=5), factor=2
             ),
-            should_handle=lambda e: isinstance(e, requests.ConnectionError)
+            should_handle=lambda e: isinstance(e, requests.ConnectionError),
         ),
         # Then circuit protector
         CircuitProtectorPolicy(
             cooldown=timedelta(minutes=1),
             failure_limit=Fraction(3, 10),
-            should_handle=lambda e: isinstance(e, (requests.ConnectionError, requests.Timeout))
-        )
+            should_handle=lambda e: isinstance(
+                e, (requests.ConnectionError, requests.Timeout)
+            ),
+        ),
     )
 )
+
 
 @api_safetynet
 def fetch_external_data(query):
     import requests
+
     response = requests.get(
-        f"https://api.external.com/data",
-        params={'q': query},
-        timeout=10
+        f"https://api.external.com/data", params={"q": query}, timeout=10
     )
     response.raise_for_status()
     return response.json()
@@ -155,21 +160,25 @@ def fetch_external_data(query):
 from datetime import timedelta
 from resilient_circuit import CircuitProtectorPolicy
 
+
 def is_api_error_relevant(exc):
     """Check if the error is one we should handle"""
-    if hasattr(exc, 'response'):
+    if hasattr(exc, "response"):
         return exc.response.status_code in [500, 502, 503, 504]
     return isinstance(exc, (requests.ConnectionError, requests.Timeout))
+
 
 oauth_protector = CircuitProtectorPolicy(
     cooldown=timedelta(minutes=5),
     failure_limit=Fraction(2, 5),
-    should_handle=is_api_error_relevant
+    should_handle=is_api_error_relevant,
 )
+
 
 @oauth_protector
 def call_oauth_protected_api():
     import requests
+
     # Refresh token logic here...
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get("https://api.protected.com/data", headers=headers)
@@ -190,18 +199,20 @@ from datetime import timedelta
 from fractions import Fraction
 from resilient_circuit import CircuitProtectorPolicy
 
+
 def is_transient_error(exc):
     """Only handle transient errors, not permanent failures"""
-    return (
-        isinstance(exc, (ConnectionError, requests.Timeout)) or
-        ("transient" in str(exc).lower())
+    return isinstance(exc, (ConnectionError, requests.Timeout)) or (
+        "transient" in str(exc).lower()
     )
+
 
 queue_consumer_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=30),
     failure_limit=Fraction(1, 3),
-    should_handle=is_transient_error
+    should_handle=is_transient_error,
 )
+
 
 @queue_consumer_protector
 def process_queue_message(message):
@@ -228,13 +239,14 @@ from resilient_circuit import RetryPolicy
 
 item_retry_policy = RetryPolicy(
     max_retries=1,
-    handle=lambda e: isinstance(e, ValueError)  # Only retry value errors
+    handle=lambda e: isinstance(e, ValueError),  # Only retry value errors
 )
+
 
 def process_batch(items):
     results = []
     errors = []
-    
+
     for item in items:
         try:
             # Apply retry policy to individual items
@@ -244,14 +256,15 @@ def process_batch(items):
             errors.append((item, str(e)))
             # Continue processing other items
             continue
-    
+
     return results, errors
+
 
 def process_single_item(item):
     # Process a single item that might fail
-    if item.get('unprocessible'):
+    if item.get("unprocessible"):
         raise ValueError("Item cannot be processed")
-    return {"id": item['id'], "status": "processed"}
+    return {"id": item["id"], "status": "processed"}
 ```
 
 ## Monitoring and Logging
@@ -263,34 +276,42 @@ from datetime import datetime, timedelta
 from fractions import Fraction
 from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
+
 class CircuitProtectorMonitor:
     def __init__(self):
         self.state_transitions = []
         self.last_transition = datetime.now()
-    
+
     def log_status_change(self, policy, old_status, new_status):
         transition_time = datetime.now()
         duration = transition_time - self.last_transition
-        
-        print(f"Circuit protector changed status: {old_status.name} -> {new_status.name}")
+
+        print(
+            f"Circuit protector changed status: {old_status.name} -> {new_status.name}"
+        )
         print(f"Duration in {old_status.name} status: {duration}")
-        
-        self.status_transitions.append({
-            'timestamp': transition_time,
-            'old_status': old_status,
-            'new_status': new_status,
-            'duration': duration
-        })
-        
+
+        self.status_transitions.append(
+            {
+                "timestamp": transition_time,
+                "old_status": old_status,
+                "new_status": new_status,
+                "duration": duration,
+            }
+        )
+
         # Alert on critical status changes
         if new_status == CircuitState.OPEN:
-            self.send_alert(f"Circuit protector opened for service at {transition_time}")
-        
+            self.send_alert(
+                f"Circuit protector opened for service at {transition_time}"
+            )
+
         self.last_transition = transition_time
-    
+
     def send_alert(self, message):
         # Send alert to monitoring system
         print(f"ALERT: {message}")
+
 
 # Create monitor instance
 monitor = CircuitProtectorMonitor()
@@ -299,13 +320,15 @@ monitor = CircuitProtectorMonitor()
 monitored_protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
     failure_limit=Fraction(3, 10),
-    on_status_change=monitor.log_status_change
+    on_status_change=monitor.log_status_change,
 )
+
 
 @monitored_protector
 def monitored_service_call():
     # Service call with full monitoring
     import random
+
     if random.random() < 0.6:  # 60% failure rate for demo
         raise ConnectionError("Service unavailable")
     return "Success"
@@ -325,15 +348,14 @@ logger.setLevel(logging.INFO)
 
 # Create handler and formatter
 handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+
 def create_logged_circuit_protector(name):
     """Create a circuit protector with comprehensive logging"""
-    
+
     def log_status_change(policy, old_status, new_status):
         logger.info(
             f"[{name}] Circuit protector status changed: {old_status.name} -> {new_status.name}"
@@ -341,15 +363,17 @@ def create_logged_circuit_protector(name):
         # Log execution_log
         execution_log = list(policy.execution_log)
         logger.info(f"[{name}] Recent execution log: {execution_log}")
-    
+
     return CircuitProtectorPolicy(
         cooldown=timedelta(seconds=30),
         failure_limit=Fraction(2, 5),
-        on_status_change=log_status_change
+        on_status_change=log_status_change,
     )
+
 
 # Use the logged circuit protector
 logged_protector = create_logged_circuit_protector("ExternalPaymentAPI")
+
 
 @logged_protector
 def process_payment(amount, card_details):
@@ -364,9 +388,11 @@ def process_payment(amount, card_details):
         logger.error(f"Payment processing failed: {str(e)}", exc_info=True)
         raise
 
+
 def execute_payment(amount, card_details):
     # Payment processing implementation
     import random
+
     if random.random() < 0.3:  # 30% failure rate for demo
         raise ConnectionError("Payment gateway unavailable")
     return {"status": "success", "transaction_id": "12345"}

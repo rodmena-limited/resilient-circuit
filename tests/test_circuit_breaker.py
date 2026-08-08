@@ -8,18 +8,28 @@ import pytest
 
 from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
 from resilient_circuit.exceptions import ProtectedCallError
+from resilient_circuit.storage import InMemoryStorage
+
+# All policies here pin InMemoryStorage explicitly: the shared storage the
+# environment selects (PostgreSQL when RC_DB_* is set) would make these
+# policy-logic tests share state through fixed resource keys and turn the
+# suite flaky under load. Storage backends have their own test classes.
+
+
+def _policy(**kwargs):
+    return CircuitProtectorPolicy(storage=InMemoryStorage(), **kwargs)
 
 
 class TestCircuitProtector:
     @pytest.fixture
     def protector(self):
-        yield CircuitProtectorPolicy(
+        yield _policy(
             resource_key="test_circuit_breaker", cooldown=timedelta(milliseconds=50)
         )
 
     def test_should_construct_policy_with_defaults(self):
         # given
-        protector = CircuitProtectorPolicy(resource_key="test_defaults")
+        protector = _policy(resource_key="test_defaults")
 
         # then
         assert protector.cooldown == timedelta(0)
@@ -52,6 +62,10 @@ class TestCircuitProtector:
     ):
         # given
         method = Mock()
+        # A long cooldown keeps the circuit OPEN for the whole test: the
+        # short fixture cooldown (50ms) could expire under load between the
+        # setter and the call, turning this "must be blocked" test flaky.
+        protector.cooldown = timedelta(seconds=60)
         protector.status = CircuitStatus.OPEN
 
         # when / then
@@ -139,7 +153,7 @@ class TestCircuitProtector:
     def test_should_invoke_on_status_change_when_status_is_changed(self, protector):
         # given
         state_change_callback = Mock()
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_status_change", on_status_change=state_change_callback
         )
 
@@ -160,7 +174,7 @@ class TestCircuitProtector:
 class TestCircuitProtectorWithLimits:
     def test_should_open_after_reaching_failure_limit(self):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_failure_limit", failure_limit=Fraction(2, 5)
         )
         method = Mock(
@@ -190,7 +204,7 @@ class TestCircuitProtectorWithLimits:
 
     def test_should_stay_closed_before_reaching_failure_limit(self):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_stay_closed", failure_limit=Fraction(3, 5)
         )
         method = Mock(
@@ -220,7 +234,7 @@ class TestCircuitProtectorWithLimits:
 
     def test_should_close_after_reaching_success_limit(self):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_success_limit",
             success_limit=Fraction(3, 5),
             failure_limit=Fraction(2, 10),
@@ -252,7 +266,7 @@ class TestCircuitProtectorWithLimits:
         self,
     ):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_no_success_limit", failure_limit=Fraction(2, 5)
         )
         protector.status = CircuitStatus.HALF_OPEN
@@ -277,7 +291,7 @@ class TestCircuitProtectorWithLimits:
     def test_should_stay_open_until_reaching_success_limit(self):
         # given
         # Need a cooldown to prevent immediate transition to HALF_OPEN
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_stay_open",
             success_limit=Fraction(4, 5),
             cooldown=timedelta(seconds=10),  # Long cooldown to keep it OPEN
@@ -307,7 +321,7 @@ class TestCircuitProtectorWithLimits:
 class TestCircuitProtectorWithExceptionHandling:
     def test_should_open_when_exception_must_be_handled(self):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_value_error",
             should_handle=lambda e: isinstance(e, ValueError),
         )
@@ -322,7 +336,7 @@ class TestCircuitProtectorWithExceptionHandling:
 
     def test_should_stay_closed_when_exception_must_not_be_handled(self):
         # given
-        protector = CircuitProtectorPolicy(
+        protector = _policy(
             resource_key="test_runtime_error",
             should_handle=lambda e: isinstance(e, RuntimeError),
         )

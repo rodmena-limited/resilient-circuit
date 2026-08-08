@@ -7,13 +7,16 @@ from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitSta
 from resilient_circuit.exceptions import ProtectedCallError, RetryLimitReached
 from resilient_circuit.failsafe import SafetyNet
 from resilient_circuit.retry import RetryWithBackoffPolicy
+from resilient_circuit.storage import InMemoryStorage
 
 
 class TestSafetyNet:
     @pytest.fixture
     def protector(self):
         yield CircuitProtectorPolicy(
-            resource_key="test_failsafe", cooldown=timedelta(seconds=1)
+            resource_key="test_failsafe",
+            storage=InMemoryStorage(),
+            cooldown=timedelta(seconds=1),
         )
 
     @pytest.fixture

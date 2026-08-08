@@ -54,9 +54,9 @@ from resilient_circuit import CircuitProtectorPolicy
 
 # Create a circuit protector
 protector = CircuitProtectorPolicy(
-    cooldown=timedelta(seconds=30),
-    failure_limit=Fraction(2, 5)
+    cooldown=timedelta(seconds=30), failure_limit=Fraction(2, 5)
 )
+
 
 @protector
 def external_service_call():
@@ -90,6 +90,7 @@ from resilient_circuit import RetryWithBackoffPolicy
 
 retry_policy = RetryWithBackoffPolicy(max_retries=3)
 
+
 @retry_policy
 def flaky_operation():
     # Operation that might fail temporarily
@@ -106,13 +107,11 @@ backoff = ExponentialDelay(
     min_delay=timedelta(seconds=1),
     max_delay=timedelta(seconds=10),
     factor=2,
-    jitter=0.1
+    jitter=0.1,
 )
 
-retry_with_backoff = RetryWithBackoffPolicy(
-    max_retries=3,
-    backoff=backoff
-)
+retry_with_backoff = RetryWithBackoffPolicy(max_retries=3, backoff=backoff)
+
 
 @retry_with_backoff
 def operation_with_backoff():
@@ -130,9 +129,10 @@ from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtecto
 safety_net = SafetyNet(
     policies=(
         RetryWithBackoffPolicy(max_retries=2),
-        CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
+        CircuitProtectorPolicy(failure_limit=Fraction(2, 5)),
     )
 )
+
 
 @safety_net
 def resilient_operation():
@@ -148,9 +148,9 @@ def resilient_operation():
 def is_retryable_exception(exc):
     return isinstance(exc, (ConnectionError, TimeoutError))
 
+
 retry_policy = RetryWithBackoffPolicy(
-    max_retries=3,
-    should_handle=is_retryable_exception
+    max_retries=3, should_handle=is_retryable_exception
 )
 ```
 
@@ -160,9 +160,9 @@ retry_policy = RetryWithBackoffPolicy(
 def handle_status_change(policy, old_status, new_status):
     print(f"Circuit protector status changed: {old_status} -> {new_status}")
 
+
 protector = CircuitProtectorPolicy(
-    cooldown=timedelta(seconds=30),
-    on_status_change=handle_status_change
+    cooldown=timedelta(seconds=30), on_status_change=handle_status_change
 )
 ```
 
@@ -171,10 +171,12 @@ protector = CircuitProtectorPolicy(
 ```python
 protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
 
+
 @protector
 def service_call():
     # Your operation
     pass
+
 
 # Access historical data
 print(f"Current status: {protector.status}")

@@ -51,10 +51,32 @@ class TestStorageBackendSelection:
         monkeypatch.setenv("RC_DB_USER", "invalid_user")
         monkeypatch.setenv("RC_DB_PASSWORD", "invalid_password")
 
-        storage = create_storage()
+        # The fallback is designed to be observable (ticket #6): assert the
+        # RuntimeWarning here rather than letting it leak into the summary.
+        with pytest.warns(RuntimeWarning, match="Falling back to InMemoryStorage"):
+            storage = create_storage()
 
         # Should fallback to InMemoryStorage due to connection failure
         assert isinstance(storage, InMemoryStorage)
+
+    def test_postgres_fallback_emits_runtime_warning(self, monkeypatch):
+        """A distributed deployment silently degrading to in-memory must be
+        observable (ticket #6): the fallback emits a RuntimeWarning."""
+        monkeypatch.setenv("RC_DB_HOST", "invalid-host-that-does-not-exist")
+        monkeypatch.setenv("RC_DB_PORT", "5432")
+        monkeypatch.setenv("RC_DB_NAME", "nonexistent_db")
+        monkeypatch.setenv("RC_DB_USER", "invalid_user")
+        monkeypatch.setenv("RC_DB_PASSWORD", "invalid_password")
+
+        with pytest.warns(RuntimeWarning, match="Falling back to InMemoryStorage"):
+            storage = create_storage()
+        assert isinstance(storage, InMemoryStorage)
+
+    def test_backend_name_reports_effective_backend(self, monkeypatch):
+        """Callers can tell whether state is shared or process-local."""
+        monkeypatch.delenv("RC_DB_HOST", raising=False)
+        monkeypatch.delenv("RC_DB_PASSWORD", raising=False)
+        assert create_storage().backend_name == "in-memory"
 
 
 class TestInMemoryStorage:
@@ -139,6 +161,24 @@ class TestPostgresStorage:
         result = storage.get_state("test_key_update")
         assert result["state"] == "OPEN"
         assert result["failure_count"] == 3
+
+    def test_should_preserve_subsecond_open_until_precision(self, storage):
+        import time
+
+        now = time.time() + 0.5
+        storage.set_state("test_key_precision", "OPEN", 1, now)
+        stored = storage.get_state("test_key_precision")
+        assert stored is not None
+        assert abs(stored["open_until"] - now) < 0.01  # microseconds survive
+
+    def test_should_delete_state(self, storage):
+        storage.set_state("test_key_delete", "OPEN", 5, 99999.99)
+        assert storage.delete_state("test_key_delete") is True
+        assert storage.get_state("test_key_delete") is None
+        assert storage.delete_state("test_key_delete") is False
+
+    def test_should_report_backend_name(self, storage):
+        assert storage.backend_name == "postgres"
 
 
 class TestCircuitBreakerPersistence:

@@ -1,11 +1,16 @@
+import threading
 from fractions import Fraction
-from typing import Generic, List, TypeVar
+from typing import Generic, Iterator, List, TypeVar
 
 T = TypeVar("T")
 
 
 class GenericCircularBuffer(Generic[T]):
-    """Buffer that keeps last N items."""
+    """Buffer that keeps last N items.
+
+    Iteration and statistics are thread-safe against concurrent ``add``
+    calls: reads observe a consistent snapshot.
+    """
 
     def __init__(self, size: int) -> None:
         if size < 1:
@@ -13,19 +18,28 @@ class GenericCircularBuffer(Generic[T]):
 
         self.size = size
         self._items: List[T] = []
+        self._lock = threading.RLock()
 
     def __len__(self) -> int:
-        return len(self._items)
+        with self._lock:
+            return len(self._items)
+
+    def __iter__(self) -> Iterator[T]:
+        with self._lock:
+            return iter(list(self._items))
 
     def __str__(self) -> str:
-        return str(self._items)
+        with self._lock:
+            return str(self._items)
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}(size={self.size}): {self}>"
+        with self._lock:
+            return f"<{self.__class__.__name__}(size={self.size}): {self._items}>"
 
     def add(self, item: T) -> None:
-        self._items.append(item)
-        self._items = self._items[-self.size :]
+        with self._lock:
+            self._items.append(item)
+            self._items = self._items[-self.size :]
 
     @property
     def is_full(self) -> bool:
@@ -40,11 +54,13 @@ class BinaryCircularBuffer(GenericCircularBuffer[bool]):
 
     @property
     def success_count(self) -> int:
-        return self._items.count(True)
+        with self._lock:
+            return self._items.count(True)
 
     @property
     def failure_count(self) -> int:
-        return self._items.count(False)
+        with self._lock:
+            return self._items.count(False)
 
     @property
     def success_rate(self) -> Fraction:

@@ -3,9 +3,11 @@ import logging
 import os
 import threading
 import time
+import warnings
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from collections import OrderedDict
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from dotenv import load_dotenv
@@ -24,9 +26,37 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+#: Serializes the once-per-process schema check/migration across threads.
+_PG_ENSURE_LOCK = threading.Lock()
+#: True once this process has ensured (or migrated) the table. DDL is global
+#: to the database, so one check per process is enough.
+_PG_SCHEMA_READY = False
+
+#: The single source of truth for the table schema, shared by the runtime
+#: migrator and the CLI so the two can never drift apart. All timestamps are
+#: timezone-aware (TIMESTAMPTZ); open_until is written as explicit UTC.
+_RC_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
+    resource_key VARCHAR(255) NOT NULL,
+    state VARCHAR(50) NOT NULL,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    open_until TIMESTAMPTZ,
+    execution_log JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    namespace VARCHAR(255) NOT NULL DEFAULT 'default',
+    PRIMARY KEY (resource_key, namespace)
+)
+"""
+
 
 class CircuitBreakerStorage(ABC):
     """Abstract base class for circuit breaker storage backends."""
+
+    #: Human-readable identity of the backend. Callers that need to know
+    #: whether state is shared across processes (e.g. "postgres") or local
+    #: to this process (e.g. "in-memory") can inspect this attribute.
+    backend_name: str = "unknown"
 
     @abstractmethod
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
@@ -45,7 +75,7 @@ class CircuitBreakerStorage(ABC):
         state: str,
         failure_count: int,
         open_until: float,
-        execution_log: Optional[list] = None,
+        execution_log: Optional[List[bool]] = None,
     ) -> bool:
         """Blind (unconditional-intent) write of the state for a resource key.
 
@@ -67,6 +97,24 @@ class CircuitBreakerStorage(ABC):
             the stored circuit is OPEN with an unexpired cooldown.
         """
         pass
+
+    def delete_state(self, resource_key: str) -> bool:
+        """Remove the stored state for a resource key.
+
+        Backends that cannot delete state return False without raising, so
+        callers can always invoke this operation safely.
+
+        Args:
+            resource_key: Unique circuit breaker identifier
+
+        Returns:
+            True if a stored state existed and was removed, False otherwise.
+        """
+        logger.warning(
+            f"{type(self).__name__} does not support delete_state; stored state "
+            f"for {resource_key} left in place"
+        )
+        return False
 
     def update_state(
         self,
@@ -111,11 +159,22 @@ class InMemoryStorage(CircuitBreakerStorage):
 
     Thread-safe: reads, guarded writes and read-modify-write cycles are
     serialized on a process-local lock.
+
+    Bounded: the store keeps at most ``max_entries`` resource keys. When the
+    cap is reached, the least-recently-used entry that is not a live OPEN is
+    evicted (an evicted key simply re-creates as CLOSED on its next use). A
+    live OPEN — an unexpired protection signal — is never evicted, even if
+    that means the cap is temporarily exceeded.
     """
 
-    def __init__(self) -> None:
-        self._states: Dict[str, Dict[str, Any]] = {}
+    backend_name = "in-memory"
+
+    def __init__(self, max_entries: Optional[int] = 8192) -> None:
+        if max_entries is not None and max_entries < 1:
+            raise ValueError("`max_entries` must be positive (or None for unbounded).")
+        self._states: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._lock = threading.Lock()
+        self.max_entries = max_entries
 
     @staticmethod
     def _is_live_open(stored: Optional[Dict[str, Any]]) -> bool:
@@ -136,7 +195,28 @@ class InMemoryStorage(CircuitBreakerStorage):
 
     def get_state(self, resource_key: str) -> Optional[Dict[str, Any]]:
         with self._lock:
-            return self._copy(self._states.get(resource_key))
+            state = self._states.get(resource_key)
+            if state is not None:
+                self._states.move_to_end(resource_key)
+            return self._copy(state)
+
+    def _evict_if_needed(self) -> None:
+        """Evict the oldest non-live entry while over the entry cap.
+
+        A live OPEN (unexpired ``open_until``) is never evicted: dropping a
+        protection signal to reclaim memory is worse than exceeding the cap.
+        Evicting a non-live entry is semantically equivalent to first-time
+        load — the next read re-creates it as CLOSED.
+        """
+        if self.max_entries is None:
+            return
+        while len(self._states) >= self.max_entries:
+            for key in list(self._states.keys()):
+                if not self._is_live_open(self._states[key]):
+                    del self._states[key]
+                    break
+            else:
+                return  # every stored entry is a live protection signal
 
     def _store(
         self,
@@ -144,7 +224,7 @@ class InMemoryStorage(CircuitBreakerStorage):
         state: str,
         failure_count: int,
         open_until: float,
-        execution_log: Optional[list],
+        execution_log: Optional[List[bool]],
     ) -> None:
         state_dict: Dict[str, Any] = {
             "state": state,
@@ -153,11 +233,16 @@ class InMemoryStorage(CircuitBreakerStorage):
         }
         if execution_log is not None:
             state_dict["execution_log"] = list(execution_log)
-        elif resource_key in self._states and "execution_log" in self._states[resource_key]:
+        elif (
+            resource_key in self._states
+            and "execution_log" in self._states[resource_key]
+        ):
             # Preserve the existing log when the caller does not provide one,
             # mirroring PostgresStorage behavior.
             state_dict["execution_log"] = self._states[resource_key]["execution_log"]
+        self._evict_if_needed()
         self._states[resource_key] = state_dict
+        self._states.move_to_end(resource_key)
 
     def set_state(
         self,
@@ -165,7 +250,7 @@ class InMemoryStorage(CircuitBreakerStorage):
         state: str,
         failure_count: int,
         open_until: float,
-        execution_log: Optional[list] = None,
+        execution_log: Optional[List[bool]] = None,
     ) -> bool:
         with self._lock:
             if self._is_live_open(self._states.get(resource_key)):
@@ -192,9 +277,18 @@ class InMemoryStorage(CircuitBreakerStorage):
             )
             return self._copy(self._states[resource_key])
 
+    def delete_state(self, resource_key: str) -> bool:
+        with self._lock:
+            if resource_key in self._states:
+                del self._states[resource_key]
+                return True
+            return False
+
 
 class PostgresStorage(CircuitBreakerStorage):
     """PostgreSQL storage implementation for circuit breaker state."""
+
+    backend_name = "postgres"
 
     def __init__(self, connection_string: str, namespace: str = "default"):
         if not HAS_PSYCOPG:
@@ -211,100 +305,110 @@ class PostgresStorage(CircuitBreakerStorage):
         return psycopg.connect(self.connection_string)
 
     def _ensure_table_exists(self) -> None:
-        """Ensure the circuit breaker table exists with namespace support."""
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cur:
-                    # Check if namespace column exists
-                    cur.execute("""
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name = 'rc_circuit_breakers'
-                        AND column_name = 'namespace'
-                    """)
-                    has_namespace = cur.fetchone() is not None
+        """Ensure the circuit breaker table exists with the current schema.
 
-                    if not has_namespace:
-                        # Old schema without namespace - need to migrate
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
-                                resource_key VARCHAR(255) NOT NULL,
-                                state VARCHAR(50) NOT NULL,
-                                failure_count INTEGER NOT NULL DEFAULT 0,
-                                open_until TIMESTAMP,
-                                execution_log JSONB,
-                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                namespace VARCHAR(255) NOT NULL DEFAULT 'default',
-                                PRIMARY KEY (resource_key, namespace)
+        Runs once per process: later PostgresStorage constructions skip the
+        DDL. The check and any migration run in one transaction, serialized
+        across processes by an advisory lock, and are idempotent — legacy
+        tables (pre-namespace single-column PK, naive TIMESTAMP open_until)
+        are upgraded in place and their stored state is preserved.
+        """
+        global _PG_SCHEMA_READY
+        with _PG_ENSURE_LOCK:
+            if _PG_SCHEMA_READY:
+                # DDL already ran this process; still verify reachability so
+                # a misconfigured/unreachable database fails construction
+                # (and create_storage can fall back) exactly as it did before.
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                return
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                            ("rc_circuit_breakers",),
+                        )
+                        cur.execute("SELECT to_regclass('public.rc_circuit_breakers')")
+                        regclass = cur.fetchone()
+                        exists = regclass is not None and regclass[0] is not None
+                        if not exists:
+                            cur.execute(_RC_TABLE_DDL)
+                        else:
+                            cur.execute(
+                                "ALTER TABLE rc_circuit_breakers "
+                                "ADD COLUMN IF NOT EXISTS namespace VARCHAR(255) "
+                                "NOT NULL DEFAULT 'default'"
                             )
-                        """)
-
-                        # Add namespace and execution_log columns to existing table if it exists
-                        cur.execute("""
-                            DO $$
-                            BEGIN
-                                IF EXISTS (SELECT 1 FROM information_schema.tables
-                                          WHERE table_name = 'rc_circuit_breakers') THEN
-                                    ALTER TABLE rc_circuit_breakers
-                                    DROP CONSTRAINT IF EXISTS rc_circuit_breakers_pkey;
-
-                                    ALTER TABLE rc_circuit_breakers
-                                    ADD COLUMN IF NOT EXISTS namespace VARCHAR(255) NOT NULL DEFAULT 'default';
-
-                                    ALTER TABLE rc_circuit_breakers
-                                    ADD COLUMN IF NOT EXISTS execution_log JSONB;
-
-                                    ALTER TABLE rc_circuit_breakers
-                                    ADD PRIMARY KEY (resource_key, namespace);
-                                END IF;
-                            END $$;
-                        """)
-                    else:
-                        # Table exists with namespace column
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
-                                resource_key VARCHAR(255) NOT NULL,
-                                state VARCHAR(50) NOT NULL,
-                                failure_count INTEGER NOT NULL DEFAULT 0,
-                                open_until TIMESTAMP,
-                                execution_log JSONB,
-                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                namespace VARCHAR(255) NOT NULL DEFAULT 'default',
-                                PRIMARY KEY (resource_key, namespace)
+                            cur.execute(
+                                "ALTER TABLE rc_circuit_breakers "
+                                "ADD COLUMN IF NOT EXISTS execution_log JSONB"
                             )
-                        """)
+                            cur.execute(
+                                """
+                                DO $$
+                                BEGIN
+                                    IF EXISTS (
+                                        SELECT 1 FROM pg_constraint
+                                        WHERE conname = 'rc_circuit_breakers_pkey'
+                                          AND conrelid = 'rc_circuit_breakers'::regclass
+                                          AND conkey = ARRAY[
+                                              (SELECT attnum FROM pg_attribute
+                                               WHERE attrelid = 'rc_circuit_breakers'::regclass
+                                                 AND attname = 'resource_key')
+                                          ]
+                                    ) THEN
+                                        ALTER TABLE rc_circuit_breakers
+                                        DROP CONSTRAINT rc_circuit_breakers_pkey;
+                                        ALTER TABLE rc_circuit_breakers
+                                        ADD PRIMARY KEY (resource_key, namespace);
+                                    END IF;
+                                END $$;
+                                """
+                            )
+                            cur.execute(
+                                """
+                                DO $$
+                                BEGIN
+                                    IF EXISTS (
+                                        SELECT 1 FROM information_schema.columns
+                                        WHERE table_name = 'rc_circuit_breakers'
+                                          AND column_name = 'open_until'
+                                          AND data_type = 'timestamp without time zone'
+                                    ) THEN
+                                        ALTER TABLE rc_circuit_breakers
+                                        ALTER COLUMN open_until TYPE TIMESTAMPTZ
+                                        USING open_until AT TIME ZONE 'localtime';
+                                    END IF;
+                                END $$;
+                                """
+                            )
 
-                        # Add execution_log column if missing (migration for older tables)
-                        cur.execute("""
-                            ALTER TABLE rc_circuit_breakers
-                            ADD COLUMN IF NOT EXISTS execution_log JSONB
-                        """)
-
-                    # Create indexes for better performance
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_state
-                        ON rc_circuit_breakers(state)
-                    """)
-
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_namespace
-                        ON rc_circuit_breakers(namespace)
-                    """)
-
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_rc_circuit_breakers_key_namespace
-                        ON rc_circuit_breakers(resource_key, namespace)
-                    """)
-
-                    conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to ensure table exists: {e}")
-            raise
+                        # Create indexes for better performance
+                        cur.execute(
+                            "CREATE INDEX IF NOT EXISTS "
+                            "idx_rc_circuit_breakers_state "
+                            "ON rc_circuit_breakers(state)"
+                        )
+                        cur.execute(
+                            "CREATE INDEX IF NOT EXISTS "
+                            "idx_rc_circuit_breakers_namespace "
+                            "ON rc_circuit_breakers(namespace)"
+                        )
+                        cur.execute(
+                            "CREATE INDEX IF NOT EXISTS "
+                            "idx_rc_circuit_breakers_key_namespace "
+                            "ON rc_circuit_breakers(resource_key, namespace)"
+                        )
+                        conn.commit()
+                _PG_SCHEMA_READY = True
+            except Exception as e:
+                logger.error(f"Failed to ensure table exists: {e}")
+                raise
 
     @staticmethod
-    def _row_to_state(row: Optional[tuple]) -> Optional[Dict[str, Any]]:
+    def _row_to_state(row: Optional[tuple[Any, ...]]) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         result = {
@@ -318,15 +422,18 @@ class PostgresStorage(CircuitBreakerStorage):
 
     @staticmethod
     def _to_pg_timestamp(epoch: float) -> Optional[str]:
-        """Format an epoch as the naive local-time string this schema stores.
+        """Format an epoch as an explicit-UTC TIMESTAMPTZ literal.
 
-        Microseconds are preserved: sub-second cooldowns must survive the
-        round-trip, or a peer refreshing its view would adopt an already
-        "expired" open_until.
+        UTC with an explicit offset makes the stored instant independent of
+        the writer's and the session's timezone — a peer in any timezone
+        reads the same instant. Microseconds are preserved: sub-second
+        cooldowns must survive the round-trip.
         """
         if epoch <= 0:
             return None
-        return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M:%S.%f")
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S.%f%z"
+        )
 
     _STATE_SELECT = (
         "SELECT state, failure_count, open_until, execution_log "
@@ -358,11 +465,11 @@ class PostgresStorage(CircuitBreakerStorage):
     # A row whose stored state is OPEN with an unexpired open_until is
     # immutable to blind writers: a stale CLOSED/HALF_OPEN must not erase a
     # live protection signal, and a later opener must not move the stored
-    # cooldown end. "Now" is passed in writer-clock local time so the
-    # comparison uses the same clock convention the column is written with.
+    # cooldown end. "Now" is passed as an explicit-UTC instant so the
+    # comparison is independent of the writer's or the session's timezone.
     _LIVE_OPEN_GUARD = (
         "NOT (rc_circuit_breakers.state = 'OPEN' "
-        "AND COALESCE(rc_circuit_breakers.open_until > %s::timestamp, FALSE))"
+        "AND COALESCE(rc_circuit_breakers.open_until > %s::timestamptz, FALSE))"
     )
 
     def _upsert(
@@ -372,7 +479,7 @@ class PostgresStorage(CircuitBreakerStorage):
         state: str,
         failure_count: int,
         open_until: float,
-        execution_log: Optional[list],
+        execution_log: Optional[List[bool]],
         guarded: bool,
     ) -> bool:
         """Run the upsert on an existing cursor. Returns True if a row was written."""
@@ -432,7 +539,7 @@ class PostgresStorage(CircuitBreakerStorage):
         state: str,
         failure_count: int,
         open_until: float,
-        execution_log: Optional[list] = None,
+        execution_log: Optional[List[bool]] = None,
     ) -> bool:
         """Blind write of the state for a resource key within this namespace.
 
@@ -506,9 +613,7 @@ class PostgresStorage(CircuitBreakerStorage):
                         (resource_key, self.namespace),
                     )
                     current = self._row_to_state(cur.fetchone())
-                    new_state = mutator(
-                        dict(current) if current is not None else None
-                    )
+                    new_state = mutator(dict(current) if current is not None else None)
                     if new_state is None:
                         conn.commit()
                         return current
@@ -526,6 +631,25 @@ class PostgresStorage(CircuitBreakerStorage):
         except Exception as e:
             logger.error(
                 f"Failed to update state for {resource_key} "
+                f"(namespace={self.namespace}): {e}"
+            )
+            raise
+
+    def delete_state(self, resource_key: str) -> bool:
+        """Remove the stored state for a resource key within this namespace."""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM rc_circuit_breakers "
+                        "WHERE resource_key = %s AND namespace = %s",
+                        (resource_key, self.namespace),
+                    )
+                    conn.commit()
+                    return bool(cur.rowcount)
+        except Exception as e:
+            logger.error(
+                f"Failed to delete state for {resource_key} "
                 f"(namespace={self.namespace}): {e}"
             )
             raise
@@ -560,6 +684,14 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
             return PostgresStorage(connection_string, namespace=namespace)
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL storage: {e}")
+            warnings.warn(
+                f"PostgreSQL storage was requested (RC_DB_HOST/RC_DB_PASSWORD "
+                f"set) but is unavailable: {e}. Falling back to InMemoryStorage "
+                f"— circuit breaker state will be process-local and NOT shared "
+                f"across instances.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return InMemoryStorage()
     else:
         # Default to in-memory storage

@@ -9,6 +9,8 @@ import os
 import sys
 from typing import Any
 
+from resilient_circuit.storage import _RC_TABLE_DDL
+
 HAS_PSYCOPG = False
 HAS_DOTENV = False
 psycopg: Any = None
@@ -84,20 +86,9 @@ def create_postgres_table(config: dict[str, Any]) -> bool:
                         "ℹ️  Table 'rc_circuit_breakers' already exists, checking for updates..."
                     )
 
-                # Create the circuit breaker table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS rc_circuit_breakers (
-                        resource_key VARCHAR(255) NOT NULL,
-                        namespace VARCHAR(255) NOT NULL DEFAULT 'default',
-                        state VARCHAR(20) NOT NULL CHECK (state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
-                        failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0 AND failure_count <= 2147483647),
-                        open_until TIMESTAMPTZ,
-                        execution_log JSONB,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        PRIMARY KEY (resource_key, namespace)
-                    );
-                """)
+                # Create the circuit breaker table (single source of truth
+                # shared with the runtime migrator in resilient_circuit.storage)
+                cur.execute(_RC_TABLE_DDL)
 
                 # Create optimized indexes
                 cur.execute("""
@@ -274,10 +265,10 @@ def run_pg_setup(args: argparse.Namespace) -> int:
         return 1
 
 
-def main():
+def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        prog="highway-circutbreaker-cli",
+        prog="resilient-circuit-cli",
         description="Highway Circuit Breaker CLI tools",
     )
 

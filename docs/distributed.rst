@@ -6,6 +6,43 @@ Overview
 
 Resilient Circuit is designed for distributed systems where multiple service instances need to coordinate failure handling. Using PostgreSQL as a shared storage backend, circuit breakers can synchronize state across all instances of your application.
 
+Distributed Admission
+---------------------
+
+Before admitting a protected call, a circuit breaker refreshes its view from
+shared storage, so a peer's OPEN is honored — a process that never observed a
+failure itself still rejects calls against a stored OPEN without executing
+them. On a storage read failure the local view is kept (fail-open): a storage
+outage never takes down the caller.
+
+The refresh is throttled by ``admission_refresh_interval`` (a ``timedelta``),
+which defaults to ``DEFAULT_ADMISSION_REFRESH_INTERVAL`` (1 second). Between
+refreshes, admission uses the local view, so a peer's OPEN is honored within
+one interval rather than on the very next call.
+
+The default is throttled because ``PostgresStorage`` opens an unpooled
+connection per operation. Refreshing on every call costs a connect+SELECT per
+call, and — since a rejected call performs no state save — one connection per
+*rejected* call while the circuit is OPEN. That makes a dependency outage
+generate database load in proportion to the traffic the breaker is shedding,
+which is precisely when you least want the breaker to be a failure domain of
+its own.
+
+Tune it to the trade-off you want:
+
+.. code-block:: python
+
+   from datetime import timedelta
+
+   # Instant propagation, highest storage cost (the 0.5.0 behavior).
+   CircuitProtectorPolicy(..., admission_refresh_interval=None)
+
+   # Fewer storage reads, a peer's OPEN honored within 5s.
+   CircuitProtectorPolicy(..., admission_refresh_interval=timedelta(seconds=5))
+
+Admission remains point-in-time: a peer opening the circuit between the
+refresh and the protected call's execution is an inherent race.
+
 Why Distributed Circuit Breakers?
 ----------------------------------
 
@@ -439,7 +476,8 @@ Best Practices
 
    Verify circuit breakers work correctly during:
 
-   * PostgreSQL downtime (should fallback to in-memory)
+   * PostgreSQL downtime (admission keeps the local view and fails open;
+     a storage outage never takes down the caller)
    * Network partitions
    * Instance scaling events
 
@@ -453,7 +491,12 @@ Best Practices
 
 5. **Plan for PostgreSQL Maintenance**
 
-   Circuit breakers gracefully degrade to in-memory storage if PostgreSQL is unavailable.
+   During a PostgreSQL outage, circuit breakers fail open: each call keeps
+   the local view (reads are skipped, writes are logged as errors) and
+   admits per local state. State converges again once storage returns.
+   If PostgreSQL is unreachable at *construction* time, ``create_storage``
+   falls back to in-memory storage and emits a ``RuntimeWarning`` — check
+   ``storage.backend_name`` to confirm the effective backend.
 
 Troubleshooting
 ---------------

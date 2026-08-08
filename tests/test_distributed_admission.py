@@ -13,7 +13,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitStatus
+from resilient_circuit.circuit_breaker import (
+    DEFAULT_ADMISSION_REFRESH_INTERVAL,
+    CircuitProtectorPolicy,
+    CircuitStatus,
+)
 from resilient_circuit.exceptions import ProtectedCallError
 from resilient_circuit.storage import InMemoryStorage
 
@@ -111,9 +115,9 @@ class TestRefreshThrottling:
         with pytest.raises(ProtectedCallError):
             guarded()
 
-    def test_no_interval_refreshes_every_call(self):
+    def test_explicit_none_refreshes_every_call(self):
         storage = InMemoryStorage()
-        policy_b = make_policy(storage)
+        policy_b = make_policy(storage, admission_refresh_interval=None)
 
         @policy_b
         def guarded():
@@ -124,6 +128,48 @@ class TestRefreshThrottling:
         trip_open(policy_a)
         with pytest.raises(ProtectedCallError):
             guarded()  # very next call already honors the peer's OPEN
+
+    def test_zero_interval_refreshes_every_call(self):
+        storage = InMemoryStorage()
+        policy_b = make_policy(storage, admission_refresh_interval=timedelta(0))
+
+        @policy_b
+        def guarded():
+            return "ok"
+
+        assert guarded() == "ok"
+        policy_a = make_policy(storage)
+        trip_open(policy_a)
+        with pytest.raises(ProtectedCallError):
+            guarded()
+
+    def test_default_is_throttled_not_per_call(self):
+        """The default trades instant propagation for a bounded storage cost.
+
+        A peer's OPEN is honored within DEFAULT_ADMISSION_REFRESH_INTERVAL,
+        not on the very next call. Both directions are asserted: the local
+        view admits inside the window, and the peer's OPEN is honored once
+        the window elapses.
+        """
+        assert DEFAULT_ADMISSION_REFRESH_INTERVAL == timedelta(seconds=1)
+        storage = InMemoryStorage()
+        policy_b = make_policy(storage)  # default interval
+        assert policy_b.admission_refresh_interval == (
+            DEFAULT_ADMISSION_REFRESH_INTERVAL
+        )
+
+        @policy_b
+        def guarded():
+            return "ok"
+
+        assert guarded() == "ok"  # starts the interval window
+        policy_a = make_policy(storage)
+        trip_open(policy_a)
+        # inside the window the local view still admits
+        assert guarded() == "ok"
+        time.sleep(DEFAULT_ADMISSION_REFRESH_INTERVAL.total_seconds() + 0.1)
+        with pytest.raises(ProtectedCallError):
+            guarded()  # window elapsed -> peer's OPEN honored
 
 
 class TestRefreshFailureIsFailOpen:

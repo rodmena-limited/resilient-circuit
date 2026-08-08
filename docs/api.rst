@@ -66,3 +66,5 @@ Storage Classes
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. autofunction:: resilient_circuit.storage.create_storage

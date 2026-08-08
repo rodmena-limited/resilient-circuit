@@ -111,6 +111,46 @@ class TestExponentialDelay:
         # then
         assert 0.72 < delay < 0.88
 
+    def test_should_not_overflow_for_huge_attempts(self):
+        # given
+        backoff = ExponentialDelay(
+            min_delay=timedelta(seconds=1), max_delay=timedelta(seconds=10)
+        )
+
+        # when
+        delay = backoff.for_attempt(1_000_000)
+
+        # then
+        assert delay == 10.0  # capped at max_delay, no OverflowError
+
+    def test_should_never_return_below_min_delay_with_jitter(self):
+        # given
+        backoff = ExponentialDelay(
+            min_delay=timedelta(seconds=1),
+            max_delay=timedelta(seconds=10),
+            jitter=1.0,  # worst case: full ±100% swing
+        )
+
+        # when / then
+        for attempt in range(1, 300):
+            delay = backoff.for_attempt(attempt)
+            assert 1.0 <= delay <= 10.0
+
+    def test_should_reject_factor_below_one(self):
+        with pytest.raises(ValueError, match="`factor`"):
+            ExponentialDelay(
+                min_delay=timedelta(seconds=1),
+                max_delay=timedelta(seconds=10),
+                factor=0,
+            )
+
+    def test_should_reject_max_below_min(self):
+        with pytest.raises(ValueError, match="`max_delay`"):
+            ExponentialDelay(
+                min_delay=timedelta(seconds=10),
+                max_delay=timedelta(seconds=1),
+            )
+
 
 class TestFixedDelay:
     def test_should_require_positive_attempt(self):

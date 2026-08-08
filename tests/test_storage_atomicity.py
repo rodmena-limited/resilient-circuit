@@ -21,7 +21,6 @@ from resilient_circuit.circuit_breaker import CircuitProtectorPolicy, CircuitSta
 from resilient_circuit.exceptions import ProtectedCallError
 from resilient_circuit.storage import InMemoryStorage, PostgresStorage
 
-
 LIVE = time.time() + 3600  # an unexpired cooldown end
 EXPIRED = time.time() - 10
 

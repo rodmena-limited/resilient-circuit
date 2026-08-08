@@ -91,6 +91,7 @@ def attempt(policy, counter):
 
 # ---------------------------------------------------------------- D1 children
 
+
 def d1_child_b(ns, key, b_ready, a_done, out):
     logging.disable(logging.CRITICAL)
     policy = make_policy(ns, key)  # constructed before A trips; never writes
@@ -111,8 +112,6 @@ def d1_child_a(ns, key, b_ready, a_done, out):
 
 
 def run_scenarios():
-    from resilient_circuit.circuit_breaker import CircuitProtectorPolicy
-
     results = {}
     run_id = uuid.uuid4().hex[:8]
 
@@ -124,8 +123,10 @@ def run_scenarios():
     b_ready, a_done = mp.Event(), mp.Event()
     pb = mp.Process(target=d1_child_b, args=(ns, key, b_ready, a_done, q))
     pa = mp.Process(target=d1_child_a, args=(ns, key, b_ready, a_done, q))
-    pb.start(); pa.start()
-    pb.join(60); pa.join(60)
+    pb.start()
+    pa.start()
+    pb.join(60)
+    pa.join(60)
     msgs = {}
     while not q.empty():
         m = q.get()
@@ -149,9 +150,7 @@ def run_scenarios():
     ns = f"probe-d2-{run_id}"
     key = "shared-dep"
     try:
-        policy_b = make_policy(
-            ns, key, admission_refresh_interval=timedelta(seconds=2)
-        )
+        policy_b = make_policy(ns, key, admission_refresh_interval=timedelta(seconds=2))
     except TypeError:
         results["D2 refresh interval throttling"] = (
             None,
@@ -188,11 +187,7 @@ def run_scenarios():
     time.sleep(3.0)  # past cooldown
     after = attempt(policy_b, executions)
     stored = parent_storage.get_state(key)
-    d3_ok = (
-        after == "admitted"
-        and stored is not None
-        and stored["state"] == "CLOSED"
-    )
+    d3_ok = after == "admitted" and stored is not None and stored["state"] == "CLOSED"
     results["D3 adopted OPEN recovers after expiry"] = (
         d3_ok,
         f"during cooldown B {during}; after expiry B {after} (must be admitted), "
@@ -207,7 +202,8 @@ def main():
     try:
         import psycopg  # noqa: F401
     except ImportError:
-        print("ABORT: psycopg not installed"); return 2
+        print("ABORT: psycopg not installed")
+        return 2
     results = run_scenarios()
     failed = False
     for name, (ok, detail) in results.items():

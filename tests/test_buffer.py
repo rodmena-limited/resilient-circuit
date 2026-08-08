@@ -79,6 +79,18 @@ class TestBinaryCircularBuffer:
         assert buffer.success_count == 3
         assert buffer.failure_count == 2
 
+    def test_should_be_iterable(self):
+        # given
+        buffer = BinaryCircularBuffer(3)
+
+        # when
+        buffer.add(True)
+        buffer.add(False)
+
+        # then
+        # documented usage: list(protector.execution_log)
+        assert list(buffer) == [True, False]
+
     def test_should_calculate_valid_ratios(self):
         # given
         buffer = BinaryCircularBuffer(5)

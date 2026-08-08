@@ -62,13 +62,15 @@ from resilient_circuit import CircuitProtectorPolicy
 # Create a circuit protector that trips after 3 failures
 protector = CircuitProtectorPolicy(
     failure_limit=Fraction(3, 10),  # 3 out of 10 failures
-    cooldown=timedelta(seconds=30)      # 30-second cooldown
+    cooldown=timedelta(seconds=30),  # 30-second cooldown
 )
+
 
 @protector
 def unreliable_service_call():
     # Your potentially failing external service call
     import random
+
     if random.random() < 0.7:
         raise Exception("Service temporarily unavailable")
     return "Success!"
@@ -85,19 +87,18 @@ backoff = ExponentialDelay(
     min_delay=timedelta(seconds=1),
     max_delay=timedelta(seconds=10),
     factor=2,
-    jitter=0.1
+    jitter=0.1,
 )
 
 # Apply retry policy with backoff
-retry_policy = RetryWithBackoffPolicy(
-    max_retries=3,
-    backoff=backoff
-)
+retry_policy = RetryWithBackoffPolicy(max_retries=3, backoff=backoff)
+
 
 @retry_policy
 def unreliable_database_operation():
     # Operation that might fail temporarily
     import random
+
     if random.random() < 0.5:
         raise ConnectionError("Database temporarily unavailable")
     return "Database operation completed"
@@ -112,14 +113,16 @@ from resilient_circuit import SafetyNet, CircuitProtectorPolicy, RetryWithBackof
 safety_net = SafetyNet(
     policies=(
         RetryWithBackoffPolicy(max_retries=2),
-        CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
+        CircuitProtectorPolicy(failure_limit=Fraction(2, 5)),
     )
 )
+
 
 @safety_net
 def resilient_external_api_call():
     # This will first retry, then circuit-protect if needed
     import requests
+
     response = requests.get("https://external-api.example.com/data")
     return response.json()
 ```
@@ -133,22 +136,26 @@ from datetime import timedelta
 from fractions import Fraction
 from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
+
 def custom_exception_handler(exc):
     """Only handle specific exceptions"""
     return isinstance(exc, (ConnectionError, TimeoutError))
+
 
 def status_change_handler(policy, old_status, new_status):
     """Handle status transitions"""
     print(f"Circuit protector changed status: {old_status.name} -> {new_status.name}")
 
+
 # Fully customized circuit protector
 custom_protector = CircuitProtectorPolicy(
-    cooldown=timedelta(minutes=1),                      # 1-minute cooldown
-    failure_limit=Fraction(3, 10),                 # Trip after 30% failure rate
-    success_limit=Fraction(5, 5),                  # Close after 5 consecutive successes
-    should_handle=custom_exception_handler,                   # Custom exception filter
-    on_status_change=status_change_handler              # Status change listener
+    cooldown=timedelta(minutes=1),  # 1-minute cooldown
+    failure_limit=Fraction(3, 10),  # Trip after 30% failure rate
+    success_limit=Fraction(5, 5),  # Close after 5 consecutive successes
+    should_handle=custom_exception_handler,  # Custom exception filter
+    on_status_change=status_change_handler,  # Status change listener
 )
+
 
 @custom_protector
 def monitored_service_call():
@@ -167,8 +174,9 @@ constant_backoff = FixedDelay(delay=timedelta(seconds=2))
 retry_with_constant_backoff = RetryWithBackoffPolicy(
     max_retries=5,
     backoff=constant_backoff,
-    should_handle=lambda e: isinstance(e, ConnectionError)
+    should_handle=lambda e: isinstance(e, ConnectionError),
 )
+
 
 @retry_with_constant_backoff
 def service_with_constant_retry():
@@ -183,9 +191,11 @@ from resilient_circuit import CircuitProtectorPolicy
 
 protector = CircuitProtectorPolicy(failure_limit=Fraction(2, 5))
 
+
 @protector
 def service_call():
     pass
+
 
 # Check protector status and execution log
 print(f"Current status: {protector.status.name}")
@@ -267,8 +277,9 @@ circuit_breaker = CircuitProtectorPolicy(
     resource_key="payment_service",
     cooldown=timedelta(seconds=60),
     failure_limit=Fraction(5, 10),  # 50% failure rate
-    success_limit=Fraction(3, 3)    # 3 consecutive successes to close
+    success_limit=Fraction(3, 3),  # 3 consecutive successes to close
 )
+
 
 @circuit_breaker
 def process_payment():
@@ -317,9 +328,21 @@ circuit_breaker = CircuitProtectorPolicy(resource_key="my_service")
 from resilient_circuit.storage import InMemoryStorage
 
 circuit_breaker = CircuitProtectorPolicy(
-    resource_key="my_service",
-    storage=InMemoryStorage()
+    resource_key="my_service", storage=InMemoryStorage()
 )
+```
+
+When PostgreSQL was requested (`RC_DB_*` set) but is unavailable, a
+`RuntimeWarning` is emitted — a distributed deployment must never degrade to
+per-process isolation invisibly. Check `storage.backend_name` to confirm the
+effective backend (`"postgres"` for shared state, `"in-memory"` for
+process-local).
+
+`InMemoryStorage` is bounded: it keeps at most `max_entries` resource keys
+(default 8192, pass `None` for unbounded) and evicts the least-recently-used
+entry that is not a live OPEN — a live protection signal is never dropped.
+Use `storage.delete_state(resource_key)` to remove a retired circuit
+(e.g. an OPEN that will never recover).
 ```
 
 ### Environment Variables Reference

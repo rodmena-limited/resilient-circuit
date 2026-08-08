@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "resilient-circuit"
-version = "0.5.0"
+version = "0.6.0"
 description = "A resilient circuit breaker and retry library with PostgreSQL support for distributed systems"
 readme = "README.md"
 license = "Apache-2.0"
@@ -31,12 +31,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black>=23.0.0",
-    "isort>=5.0.0",
     "mypy>=1.0.0",
     "pytest>=7.0.0",
     "pytest-mock>=3.0.0",
-    "ruff>=0.1.0",
+    # ruff is the single formatter+linter (black/isort roles); the floor pins
+    # the version that formats code blocks inside markdown so the format gate
+    # is reproducible across environments
+    "ruff>=0.16.0",
 ]
 postgres = [
     "psycopg>=3.1.0",
@@ -54,29 +55,13 @@ Repository = "https://github.com/rodmena-limited/resilient-circuit"
 Documentation = "https://resilient-circuit.readthedocs.io"
 
 [project.scripts]
-resilient-circuit = "resilient_circuit.cli:main"
+resilient-circuit-cli = "resilient_circuit.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["resilient_circuit*"]
 
 [tool.setuptools.package-data]
 resilient_circuit = ["py.typed"]
-
-[tool.black]
-line-length = 88
-target-version = ['py38']
-include = '\.pyi?$'
-extend-exclude = '''
-'''
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-line_length = 88
 
 [tool.ruff]
 line-length = 88

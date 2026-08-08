@@ -149,15 +149,18 @@ from datetime import timedelta
 from fractions import Fraction
 from resilient_circuit import CircuitProtectorPolicy, CircuitState
 
+
 def on_status_change(policy, old_status, new_status):
     print(f"Status changed from {old_status.name} to {new_status.name}")
+
 
 protector = CircuitProtectorPolicy(
     cooldown=timedelta(seconds=60),
     failure_limit=Fraction(3, 10),
     success_limit=Fraction(5, 5),
-    on_status_change=on_status_change
+    on_status_change=on_status_change,
 )
+
 
 @protector
 def service_call():
@@ -175,13 +178,11 @@ exponential_backoff = ExponentialDelay(
     min_delay=timedelta(milliseconds=100),
     max_delay=timedelta(seconds=5),
     factor=2,
-    jitter=0.1
+    jitter=0.1,
 )
 
-retry_policy = RetryWithBackoffPolicy(
-    max_retries=5,
-    backoff=exponential_backoff
-)
+retry_policy = RetryWithBackoffPolicy(max_retries=5, backoff=exponential_backoff)
+
 
 @retry_policy
 def unreliable_operation():
@@ -197,9 +198,10 @@ from resilient_circuit import SafetyNet, RetryWithBackoffPolicy, CircuitProtecto
 safety_net = SafetyNet(
     policies=(
         RetryWithBackoffPolicy(max_retries=2),
-        CircuitProtectorPolicy(failure_limit=Fraction(3, 10))
+        CircuitProtectorPolicy(failure_limit=Fraction(3, 10)),
     )
 )
+
 
 @safety_net
 def resilient_operation():

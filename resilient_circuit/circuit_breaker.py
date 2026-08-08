@@ -1,11 +1,12 @@
 import abc
 import enum
 import logging
+import threading
 import time
 from datetime import timedelta
 from fractions import Fraction
 from functools import wraps
-from typing import Callable, Optional, TypeVar
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 from typing_extensions import ParamSpec
 
@@ -22,11 +23,43 @@ P = ParamSpec("P")
 
 logger = logging.getLogger(__name__)
 
+#: Default throttle for the pre-admission refresh of shared state. A peer's
+#: OPEN is honored within this interval instead of instantly; in exchange the
+#: breaker does not issue a storage read per protected call (nor per *rejected*
+#: call while the circuit is OPEN, which would put load on the state store in
+#: proportion to the traffic a dependency outage is generating). Pass None or
+#: timedelta(0) to CircuitProtectorPolicy for the un-throttled behavior.
+DEFAULT_ADMISSION_REFRESH_INTERVAL = timedelta(seconds=1)
+
 
 class CircuitStatus(enum.Enum):
     CLOSED = "CLOSED"
     OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"
+
+
+def _normalize_stored_state(state_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate a stored state dict, returning a normalized copy or None.
+
+    Returns None when the stored value is malformed (unknown state value,
+    non-numeric ``failure_count`` or ``open_until``). Callers treat None as
+    "no usable stored state", identical to the no-state-found path.
+    """
+    try:
+        state = CircuitStatus(state_data["state"])
+        failure_count = int(state_data.get("failure_count", 0))
+        open_until = float(state_data.get("open_until", 0))
+    except (KeyError, TypeError, ValueError):
+        return None
+    execution_log = state_data.get("execution_log")
+    if execution_log is not None and not isinstance(execution_log, list):
+        execution_log = None
+    return {
+        "state": state,
+        "failure_count": failure_count,
+        "open_until": open_until,
+        "execution_log": execution_log,
+    }
 
 
 class CircuitProtectorPolicy(ProtectionPolicy):
@@ -45,15 +78,28 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         on_status_change: Optional[
             Callable[["CircuitProtectorPolicy", CircuitStatus, CircuitStatus], None]
         ] = None,
-        admission_refresh_interval: Optional[timedelta] = None,
+        admission_refresh_interval: Optional[timedelta] = (
+            DEFAULT_ADMISSION_REFRESH_INTERVAL
+        ),
     ) -> None:
         """
         Args:
             admission_refresh_interval: How often to re-read shared storage
-                before admitting a protected call. None (default) refreshes on
-                every call, so a peer process's OPEN is honored immediately.
-                Set an interval to throttle storage reads on hot paths; between
-                refreshes admission uses the local view.
+                before admitting a protected call. Defaults to
+                DEFAULT_ADMISSION_REFRESH_INTERVAL (1 second): between
+                refreshes admission uses the local view, so a peer's OPEN is
+                honored within one interval rather than instantly.
+
+                This default bounds the storage cost of admission. With a
+                per-call refresh, every protected call pays an unpooled
+                connect+SELECT, and a circuit that is OPEN pays one per
+                *rejected* call — so a dependency outage turns into sustained
+                connection churn against the state store, exactly when load is
+                highest.
+
+                Pass None (or timedelta(0)) to refresh on every call and honor
+                a peer's OPEN immediately, accepting that cost. Raise the
+                interval to trade propagation delay for fewer storage reads.
         """
         # Generate a default resource key if not provided for backward compatibility
         self.resource_key = resource_key or f"anonymous_{id(self)}"
@@ -66,16 +112,32 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         self._on_status_change = on_status_change
         self.admission_refresh_interval = admission_refresh_interval
         self._last_refresh_monotonic: Optional[float] = None
+        # Serializes admission decisions, status transitions and state saves
+        # so threads sharing one policy cannot corrupt the shared status
+        # objects. Re-entrant: on_status_change callbacks may re-enter the
+        # policy. Never held across the protected callable.
+        self._lock = threading.RLock()
 
         # Load state from storage
         self._load_state()
 
-    def _apply_stored(self, state_data: dict) -> None:
-        """Rebuild the local status object from a stored state dict."""
-        state = CircuitStatus(state_data["state"])
-        failure_count = int(state_data.get("failure_count", 0))
-        open_until = float(state_data.get("open_until", 0))
-        execution_log_data = state_data.get("execution_log")
+    def _apply_stored(self, state_data: Dict[str, Any]) -> bool:
+        """Rebuild the local status object from a stored state dict.
+
+        Returns True when the stored state was applied, False when it was
+        malformed and ignored (the caller keeps its current local status).
+        """
+        parsed = _normalize_stored_state(state_data)
+        if parsed is None:
+            logger.warning(
+                f"Ignoring malformed stored state for {self.resource_key}: "
+                f"{state_data!r}"
+            )
+            return False
+        state = parsed["state"]
+        failure_count = parsed["failure_count"]
+        open_until = parsed["open_until"]
+        execution_log_data = parsed["execution_log"]
 
         # Initialize status based on stored state
         status: CircuitStatusBase
@@ -108,11 +170,17 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         logger.debug(
             f"Loaded circuit breaker state for {self.resource_key}: {state.value}"
         )
+        return True
 
-    def _adopt_stored(self, state_data: dict) -> None:
-        """Adopt a stored state, firing on_status_change if the status differs."""
+    def _adopt_stored(self, state_data: Dict[str, Any]) -> None:
+        """Adopt a stored state, firing on_status_change if the status differs.
+
+        A malformed stored state is ignored: the current local status is kept
+        and no callback fires (fail-open discipline).
+        """
         old = self._status.status_type
-        self._apply_stored(state_data)
+        if not self._apply_stored(state_data):
+            return
         new = self._status.status_type
         if new is not old:
             self.on_status_change(old, new)
@@ -148,14 +216,13 @@ class CircuitProtectorPolicy(ProtectionPolicy):
         """Load circuit breaker state from storage including execution log buffer."""
         try:
             state_data = self.storage.get_state(self.resource_key)
-            if state_data:
-                self._apply_stored(state_data)
-            else:
-                # No state found, start with CLOSED
-                self._status = StatusClosed(policy=self)
-                logger.debug(
-                    f"No stored state found for {self.resource_key}, starting with CLOSED"
-                )
+            if state_data and self._apply_stored(state_data):
+                return
+            # No usable stored state (missing or malformed): start with CLOSED
+            self._status = StatusClosed(policy=self)
+            logger.debug(
+                f"No stored state found for {self.resource_key}, starting with CLOSED"
+            )
         except Exception as e:
             logger.error(f"Failed to load state for {self.resource_key}: {e}")
             # Fallback to default state
@@ -223,25 +290,26 @@ class CircuitProtectorPolicy(ProtectionPolicy):
 
     @status.setter
     def status(self, new_status: CircuitStatus) -> None:
-        old_status = self.status
-        new_status_obj: CircuitStatusBase
-        if new_status is CircuitStatus.CLOSED:
-            # When transitioning to CLOSED, reset failure count
-            new_status_obj = StatusClosed(policy=self, failure_count=0)
-        elif new_status is CircuitStatus.OPEN:
-            # When transitioning to OPEN, keep the failure count from current status
-            # Calculate the open_until timestamp based on current time and cooldown
-            open_until = time.time() + self.cooldown.total_seconds()
-            new_status_obj = StatusOpen(
-                policy=self, previous_status=self._status, open_until=open_until
-            )
-        else:  # HALF_OPEN
-            # When transitioning to HALF_OPEN, reset failure count
-            new_status_obj = StatusHalfOpen(policy=self, failure_count=0)
+        with self._lock:
+            old_status = self.status
+            new_status_obj: CircuitStatusBase
+            if new_status is CircuitStatus.CLOSED:
+                # When transitioning to CLOSED, reset failure count
+                new_status_obj = StatusClosed(policy=self, failure_count=0)
+            elif new_status is CircuitStatus.OPEN:
+                # When transitioning to OPEN, keep the failure count from current status
+                # Calculate the open_until timestamp based on current time and cooldown
+                open_until = time.time() + self.cooldown.total_seconds()
+                new_status_obj = StatusOpen(
+                    policy=self, previous_status=self._status, open_until=open_until
+                )
+            else:  # HALF_OPEN
+                # When transitioning to HALF_OPEN, reset failure count
+                new_status_obj = StatusHalfOpen(policy=self, failure_count=0)
 
-        self._status = new_status_obj
-        self.on_status_change(old_status, new_status)
-        self._save_state()  # Persist state change
+            self._status = new_status_obj
+            self.on_status_change(old_status, new_status)
+            self._save_state()  # Persist state change
 
     def on_status_change(self, current: CircuitStatus, new: CircuitStatus) -> None:
         """This method is called whenever protector changes its status."""
@@ -251,36 +319,42 @@ class CircuitProtectorPolicy(ProtectionPolicy):
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def decorated(*args: P.args, **kwargs: P.kwargs) -> R:
-            self._refresh_before_admission()
-            self._status.validate_execution()
+            with self._lock:
+                self._refresh_before_admission()
+                self._status.validate_execution()
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
                 should_fail = self.should_consider_failure(e)
-                if should_fail:
-                    self._status.mark_failure()
-                else:
-                    self._status.mark_success()
-                self._save_state()  # Persist state after exception
+                with self._lock:
+                    if should_fail:
+                        self._status.mark_failure()
+                    else:
+                        self._status.mark_success()
+                    self._save_state()
                 raise
             else:
                 # Check if result is ExecutionResult from bulkhead
-                if hasattr(result, 'success') and hasattr(result, 'error'):
-                    if result.success:
-                        self._status.mark_success()
-                    else:
-                        should_fail = (
-                            self.should_consider_failure(result.error)
-                            if result.error else True
-                        )
-                        if should_fail:
-                            self._status.mark_failure()
-                        else:
+                if hasattr(result, "success") and hasattr(result, "error"):
+                    with self._lock:
+                        if result.success:
                             self._status.mark_success()
+                        else:
+                            should_fail = (
+                                self.should_consider_failure(result.error)
+                                if result.error
+                                else True
+                            )
+                            if should_fail:
+                                self._status.mark_failure()
+                            else:
+                                self._status.mark_success()
+                        self._save_state()
                 else:
-                    # Normal case - no exception, not ExecutionResult
-                    self._status.mark_success()
-                self._save_state()
+                    with self._lock:
+                        # Normal case - no exception, not ExecutionResult
+                        self._status.mark_success()
+                        self._save_state()
                 return result
 
         return decorated
@@ -386,7 +460,11 @@ class StatusOpen(CircuitStatusBase):
         pass
 
     def mark_success(self) -> None:
-        self.policy.status = CircuitStatus.HALF_OPEN
+        # A success while OPEN is a stale in-flight call admitted before the
+        # trip, not a recovery probe. Ignore it: recovery is decided by
+        # HALF_OPEN probe results after the cooldown, so a racing success can
+        # never shortcut the cooldown.
+        pass
 
 
 class StatusHalfOpen(CircuitStatusBase):
