@@ -1,3 +1,34 @@
+## 0.7.0
+
+### Added
+
+- `RC_DB_DSN`: a complete libpq conninfo or `postgresql://` URL, passed to psycopg
+  verbatim and taking precedence over the discrete `RC_DB_*` variables. This is the
+  only form that can express TLS settings.
+- `RC_DB_SSLMODE`, `RC_DB_SSLROOTCERT`, `RC_DB_SSLCERT`, `RC_DB_SSLKEY`: optional TLS
+  settings appended to the connection string built from the discrete variables. Only
+  emitted when set, so existing plaintext deployments are byte-for-byte unchanged.
+
+### Why
+
+`create_storage()` could only build `host=... port=... dbname=... user=... password=...`,
+with no way to express `sslmode`/`sslrootcert`/`sslcert`/`sslkey`. Any PostgreSQL server
+requiring TLS or client-certificate authentication was therefore unreachable from
+environment configuration — `create_storage()` would log the failure and silently fall
+back to `InMemoryStorage`, leaving breaker state process-local rather than shared.
+`PostgresStorage` already passed its connection string straight to `psycopg.connect`,
+so the capability existed; only the configuration path was missing.
+
+Verified against a server mandating `sslmode=verify-full` plus a client certificate:
+before this change the connection was refused with *"connection requires a valid client
+certificate"*; after it, one process wrote an OPEN state and a separate process read it
+back over TLSv1.3.
+
+### Compatibility
+
+No breaking changes. Behaviour with no `RC_DB_*` variables set, with only some set, or
+with the discrete variables and no TLS options, is unchanged and covered by tests.
+
 # Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 

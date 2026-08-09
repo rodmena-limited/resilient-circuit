@@ -245,6 +245,34 @@ RC_DB_USER=postgres
 RC_DB_PASSWORD=your_password
 ```
 
+Both `RC_DB_HOST` and `RC_DB_PASSWORD` must be set, or storage silently stays in-memory.
+
+#### TLS and client-certificate authentication
+
+The variables above build a plaintext connection string. If your server requires TLS —
+`sslmode=verify-full`, a client certificate, or both — use **`RC_DB_DSN`** instead. It is a
+complete libpq conninfo or `postgresql://` URL, passed to psycopg verbatim, and it takes
+precedence over the discrete variables:
+
+```env
+RC_DB_DSN=postgresql://cb_user:password@db.example:5432/appdb?sslmode=verify-full&sslrootcert=/etc/ssl/cert.pem&sslcert=/etc/tls/client.crt&sslkey=/etc/tls/client.key
+```
+
+The client key file must be mode `0600` or libpq refuses it.
+
+If you prefer the discrete variables, the TLS settings can be supplied alongside them:
+
+```env
+RC_DB_SSLMODE=verify-full
+RC_DB_SSLROOTCERT=/etc/ssl/cert.pem
+RC_DB_SSLCERT=/etc/tls/client.crt
+RC_DB_SSLKEY=/etc/tls/client.key
+```
+
+> When PostgreSQL storage is requested but unreachable, `create_storage()` logs the error,
+> raises a `RuntimeWarning`, and falls back to `InMemoryStorage` — breaker state becomes
+> process-local rather than shared. Treat that warning as a configuration failure, not noise.
+
 4. **Use the CLI to set up the table:**
 
 ```bash

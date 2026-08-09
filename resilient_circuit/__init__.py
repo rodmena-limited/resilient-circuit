@@ -5,7 +5,7 @@ from resilient_circuit.failsafe import SafetyNet
 from resilient_circuit.policy import ProtectionPolicy
 from resilient_circuit.retry import RetryWithBackoffPolicy
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = (
     "ExponentialDelay",

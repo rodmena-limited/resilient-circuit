@@ -663,12 +663,36 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
                   variable RC_NAMESPACE or defaults to "default".
                   Use different namespaces for test isolation (e.g., workflow_run_id).
 
+    Environment:
+        RC_DB_DSN         Complete libpq conninfo or postgresql:// URL, used verbatim.
+                          Takes precedence over the discrete variables below and is
+                          the only form that can express TLS options, e.g.
+                          "postgresql://u:p@host:5432/db?sslmode=verify-full
+                           &sslrootcert=/etc/ssl/cert.pem&sslcert=c.crt&sslkey=c.key"
+        RC_DB_HOST        Host. With RC_DB_PASSWORD, selects PostgreSQL storage.
+        RC_DB_PORT        Port (default 5432).
+        RC_DB_NAME        Database (default "resilient_circuit_db").
+        RC_DB_USER        User (default "postgres").
+        RC_DB_PASSWORD    Password.
+        RC_DB_SSLMODE     Optional; appended to the discrete form (e.g. "verify-full").
+        RC_DB_SSLROOTCERT Optional; CA bundle path.
+        RC_DB_SSLCERT     Optional; client certificate path.
+        RC_DB_SSLKEY      Optional; client key path (must be mode 0600).
+        RC_NAMESPACE      Namespace when the argument is not given.
+
     Returns:
         CircuitBreakerStorage instance with namespace support
     """
     # Get namespace from parameter or environment
     if namespace is None:
         namespace = os.getenv("RC_NAMESPACE", "default")
+
+    # RC_DB_DSN wins: a complete libpq conninfo or postgresql:// URL, passed to
+    # psycopg verbatim. This is the only way to reach a server that requires TLS
+    # or client-certificate authentication, because the discrete RC_DB_* variables
+    # below cannot express sslmode/sslrootcert/sslcert/sslkey. Prefer it whenever
+    # the database is not a trusted local socket.
+    dsn = os.getenv("RC_DB_DSN")
 
     # Check for PostgreSQL connection info in environment
     db_host = os.getenv("RC_DB_HOST")
@@ -677,16 +701,33 @@ def create_storage(namespace: Optional[str] = None) -> CircuitBreakerStorage:
     db_user = os.getenv("RC_DB_USER", "postgres")
     db_password = os.getenv("RC_DB_PASSWORD")
 
-    if db_host and db_password:
-        # PostgreSQL storage requested
-        connection_string = f"host={db_host} port={db_port} dbname={db_name} user={db_user} password={db_password}"
+    if dsn or (db_host and db_password):
+        if dsn:
+            connection_string = dsn
+        else:
+            connection_string = (
+                f"host={db_host} port={db_port} dbname={db_name} "
+                f"user={db_user} password={db_password}"
+            )
+            # Optional TLS settings for the discrete-variable form. Only appended
+            # when set, so existing plaintext deployments are unaffected.
+            for env_name, key in (
+                ("RC_DB_SSLMODE", "sslmode"),
+                ("RC_DB_SSLROOTCERT", "sslrootcert"),
+                ("RC_DB_SSLCERT", "sslcert"),
+                ("RC_DB_SSLKEY", "sslkey"),
+            ):
+                value = os.getenv(env_name)
+                if value:
+                    connection_string += f" {key}={value}"
         try:
             return PostgresStorage(connection_string, namespace=namespace)
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL storage: {e}")
             warnings.warn(
-                f"PostgreSQL storage was requested (RC_DB_HOST/RC_DB_PASSWORD "
-                f"set) but is unavailable: {e}. Falling back to InMemoryStorage "
+                f"PostgreSQL storage was requested (RC_DB_DSN or "
+                f"RC_DB_HOST/RC_DB_PASSWORD set) but is unavailable: {e}. "
+                f"Falling back to InMemoryStorage "
                 f"— circuit breaker state will be process-local and NOT shared "
                 f"across instances.",
                 RuntimeWarning,
